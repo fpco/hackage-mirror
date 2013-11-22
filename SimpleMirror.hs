@@ -156,10 +156,10 @@ downloadFromUrl mgr path file = do
     src
 
 withS3 :: MonadResource m
-       => Aws.Bucket -> String -> (String -> m a) -> m a
+       => Aws.Bucket -> String -> (Aws.Bucket -> String -> m a) -> m a
 withS3 url file f = case splitDirectories (T.unpack url) of
-    ["s3:", _bucket] -> f file
-    ["s3:", _bucket, prefix] -> f $ prefix </> file
+    ["s3:", bucket] -> f (T.pack bucket) file
+    ["s3:", bucket, prefix] -> f (T.pack bucket) $ prefix </> file
     _ -> monadThrow $ userError $ "Failed to parse S3 path: " ++ T.unpack url
 
 awsRetry :: (MonadIO m, Transaction r a)
@@ -180,9 +180,9 @@ downloadFromS3 :: MonadResource m
                -> String
                -> Source m ByteString
 downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
-    go (T.pack -> file') = do
+    go bucket' (T.pack -> file') = do
         res  <- liftResourceT $
-            awsRetry cfg svccfg mgr $ Aws.getObject bucket file'
+            awsRetry cfg svccfg mgr $ Aws.getObject bucket' file'
         case readResponse res of
             Left (_ :: SomeException) -> return ()
             Right gor -> do
@@ -224,10 +224,10 @@ uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
            -> Source m ByteString
            -> m ()
 uploadToS3 cfg svccfg mgr bucket file src = withS3 bucket file go where
-    go (T.pack -> file') = do
+    go bucket' (T.pack -> file') = do
         lbs <- src $$ CB.sinkLbs
         res <- awsRetry cfg svccfg mgr $
-            Aws.putObject bucket file' (RequestBodyLBS lbs)
+            Aws.putObject bucket' file' (RequestBodyLBS lbs)
         -- Reading the response triggers an exception if one occurred during
         -- the upload.
         void $ readResponseIO res
