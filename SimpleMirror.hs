@@ -40,9 +40,9 @@ import qualified Data.Conduit.List as CL
 import           Data.Conduit.Zlib as CZ
 import           Data.Int
 import qualified Data.HashMap.Strict as M
+import           Data.List
 import           Data.Monoid
 import           Data.Serialize hiding (label)
-import           Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Text.Lazy.Builder
@@ -99,22 +99,22 @@ instance MonadActive m => MonadActive (LoggingT m) where
     monadActive = lift monadActive
 
 data Package = Package
-    { packageName       :: !Text
-    , packageVersion    :: !Text
+    { packageName       :: !String
+    , packageVersion    :: !String
     , packageCabal      :: !BL.ByteString
     , packageIdentifier :: !ByteString
     , packageTarEntry   :: !Tar.Entry
     }
 
-packageFullName :: Package -> Text
+packageFullName :: Package -> String
 packageFullName Package {..} = packageName <> "-" <> packageVersion
 
 data PathKind = UrlPath | S3Path | FilePath
 
-pathKind :: Text -> PathKind
+pathKind :: String -> PathKind
 pathKind url
-    | "http://" `T.isPrefixOf` url || "https://" `T.isPrefixOf` url = UrlPath
-    | "s3://" `T.isPrefixOf` url = S3Path
+    | "http://" `isPrefixOf` url || "https://" `isPrefixOf` url = UrlPath
+    | "s3://" `isPrefixOf` url = S3Path
     | otherwise = FilePath
 
 indexPackages :: (MonadLogger m, MonadThrow m, MonadBaseControl IO m,
@@ -126,13 +126,13 @@ indexPackages src = do
   where
     sinkEntries (Tar.Next ent entries)
         | Tar.NormalFile cabal _ <- Tar.entryContent ent = do
-            case T.splitOn "/" (pack (Tar.entryPath ent)) of
+            case splitDirectories (Tar.entryPath ent) of
                 [name, vers, _] ->
                     yield $ Package name vers cabal
-                        (T.encodeUtf8 (name <> vers)) ent
+                        (T.encodeUtf8 (T.pack (name <> vers))) ent
                 ["preferred-versions"] -> return ()
                 _ -> $(logError) $ "Failed to parse package name: "
-                               <> pack (Tar.entryPath ent)
+                               <> T.pack (Tar.entryPath ent)
             sinkEntries entries
         | otherwise = sinkEntries entries
     sinkEntries Tar.Done = return ()
@@ -141,24 +141,26 @@ indexPackages src = do
 
 downloadFromPath :: MonadResource m => String -> String -> Source m ByteString
 downloadFromPath path file = do
-    let p = path <> file
+    let p = path </> file
     exists <- liftIO $ doesFileExist p
     when exists $ CB.sourceFile p
 
 downloadFromUrl :: (MonadResource m, MonadBaseControl IO m,
                     Failure HttpException m)
-                => Manager -> Text -> Text -> Source m ByteString
+                => Manager -> String -> String -> Source m ByteString
 downloadFromUrl mgr path file = do
-    req  <- lift $ parseUrl (unpack (path <> file))
+    req  <- lift $ parseUrl (path </> file)
     resp <- lift $ http req mgr
     (src, _fin) <- lift $ unwrapResumable (responseBody resp)
     -- jww (2013-11-20): What to do with fin?
     src
 
-withS3 :: MonadResource m => Text -> Text -> (Text -> Text -> m a) -> m a
-withS3 path file f = case T.splitOn "/" path of
-    ["s3:", "", bucket, prefix] -> f bucket (prefix <> file)
-    _ -> monadThrow $ userError $ "Failed to parse S3 path: " ++ show path
+withS3 :: MonadResource m
+       => Aws.Bucket -> String -> (String -> m a) -> m a
+withS3 url file f = case splitDirectories (T.unpack url) of
+    ["s3:", _bucket] -> f file
+    ["s3:", _bucket, prefix] -> f $ prefix </> file
+    _ -> monadThrow $ userError $ "Failed to parse S3 path: " ++ T.unpack url
 
 awsRetry :: (MonadIO m, Transaction r a)
          => Configuration
@@ -175,12 +177,12 @@ downloadFromS3 :: MonadResource m
                -> Aws.S3Configuration NormalQuery
                -> Manager
                -> Aws.Bucket
-               -> Text
+               -> String
                -> Source m ByteString
-downloadFromS3 cfg svccfg mgr path file = withS3 path file go where
-    go bucket path' = do
+downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
+    go (T.pack -> file') = do
         res  <- liftResourceT $
-            awsRetry cfg svccfg mgr $ Aws.getObject bucket path'
+            awsRetry cfg svccfg mgr $ Aws.getObject bucket file'
         case readResponse res of
             Left (_ :: SomeException) -> return ()
             Right gor -> do
@@ -193,25 +195,24 @@ download :: (MonadResource m, MonadBaseControl IO m, Failure HttpException m)
          => Configuration
          -> Aws.S3Configuration NormalQuery
          -> Manager
-         -> Aws.Bucket
-         -> Text
+         -> String               -- ^ The server path, like /tmp/foo
+         -> String               -- ^ The file's path within the server path
          -> Source m ByteString
-download _ _ mgr path@(pathKind -> UrlPath) file =
-    downloadFromUrl mgr path file
-download cfg svccfg mgr path@(pathKind -> S3Path) file =
-    downloadFromS3 cfg svccfg mgr path file
-download _ _ _ (unpack -> path) (unpack -> file) =
-    downloadFromPath path file
+download _ _ mgr path@(pathKind -> UrlPath) =
+    downloadFromUrl mgr path
+download cfg svccfg mgr path@(pathKind -> S3Path) =
+    downloadFromS3 cfg svccfg mgr (T.pack path)
+download _ _ _ path = downloadFromPath path
 
 uploadToPath :: MonadResource m
              => String -> String -> Source m ByteString -> m ()
 uploadToPath path file src = do
-    let p = path <> file
+    let p = path </> file
     liftIO $ createDirectoryIfMissing True (takeDirectory p)
     src $$ CB.sinkFile p
 
 uploadToUrl :: (MonadResource m, MonadBaseControl IO m, Failure HttpException m)
-              => Manager -> Text -> Text -> Source m ByteString -> m ()
+              => Manager -> String -> String -> Source m ByteString -> m ()
 uploadToUrl _mgr _path _file _src = error "uploadToUrl not implemented"
 
 uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
@@ -219,14 +220,14 @@ uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
            -> Aws.S3Configuration NormalQuery
            -> Manager
            -> Aws.Bucket
-           -> Text
+           -> String
            -> Source m ByteString
            -> m ()
-uploadToS3 cfg svccfg mgr path file src = withS3 path file go where
-    go bucket path' = do
+uploadToS3 cfg svccfg mgr bucket file src = withS3 bucket file go where
+    go (T.pack -> file') = do
         lbs <- src $$ CB.sinkLbs
         res <- awsRetry cfg svccfg mgr $
-            Aws.putObject bucket path' (RequestBodyLBS lbs)
+            Aws.putObject bucket file' (RequestBodyLBS lbs)
         -- Reading the response triggers an exception if one occurred during
         -- the upload.
         void $ readResponseIO res
@@ -235,14 +236,13 @@ upload :: (MonadResource m, m ~ ResourceT IO)
        => Configuration
        -> Aws.S3Configuration NormalQuery
        -> Manager
-       -> Aws.Bucket
-       -> Text
+       -> String
+       -> String
        -> Source m ByteString
        -> m ()
-upload cfg svccfg mgr path@(pathKind -> S3Path) file src =
-    uploadToS3 cfg svccfg mgr path file src
-upload _ _ _ (unpack -> path) (unpack -> file) src =
-    uploadToPath path file src
+upload cfg svccfg mgr path@(pathKind -> S3Path) =
+    uploadToS3 cfg svccfg mgr (T.pack path)
+upload _ _ _ path = uploadToPath path
 
 backingFile :: MonadResource m
            => FilePath
@@ -317,15 +317,15 @@ mirrorHackage Options {..} =
 
     mirror mgr pkg sha newSums changed = do
         let fname = packageFullName pkg
-            dir   = "package/" <> fname <> "/"
-            upath = "package/" <> fname <> ".tar.gz"
-            dpath = dir <> fname <> ".tar.gz"
-            cabal = dir <> packageName pkg <> ".cabal"
+            dir   = "package" </> fname
+            upath = addExtension dir ".tar.gz"
+            dpath = dir </> addExtension fname ".tar.gz"
+            cabal = dir </> addExtension (packageName pkg) ".cabal"
         (el, er) <-
             if rebuild
             then return (Right (), Right ())
             else concurrently
-                (push mgr upath $ download cfg svccfg mgr from ("/" <> dpath))
+                (push mgr upath $ download cfg svccfg mgr from dpath)
                 (push mgr cabal $ CB.sourceLbs (packageCabal pkg))
         case (el, er) of
             (Right (), Right ()) -> liftIO $ atomically $ do
@@ -337,19 +337,18 @@ mirrorHackage Options {..} =
             _ -> return False
 
     push mgr file src = do
-        eres <- try $ liftResourceT $
-            upload cfg svccfg mgr to ("/" <> file) src
+        eres <- try $ liftResourceT $ upload cfg svccfg mgr to file src
         case eres of
             Right () -> $(logInfo) [st|Uploaded #{file}|]
             Left e -> do
-                let msg = pack (show (e :: SomeException))
+                let msg = T.pack (show (e :: SomeException))
                 unless ("No tarball exists for this package version"
                         `T.isInfixOf` msg) $
-                    $(logError) $ "FAILED " <> file <> ": " <> msg
+                    $(logError) $ "FAILED " <> T.pack file <> ": " <> msg
         return eres
 
     getChecksums mgr = do
-        sums <- download cfg svccfg mgr to "/00-checksums.dat" $$ CB.sinkLbs
+        sums <- download cfg svccfg mgr to "00-checksums.dat" $$ CB.sinkLbs
         $(logInfo) [st|Downloaded checksums.dat from #{to}|]
         return $ if BL.null sums
                  then M.empty
@@ -363,14 +362,14 @@ mirrorHackage Options {..} =
     getEntries mgr = do
         $(logInfo) [st|Downloading index.tar.gz from #{from}|]
         indexPackages $
-            download cfg svccfg mgr from "/00-index.tar.gz" $= CZ.ungzip
+            download cfg svccfg mgr from "00-index.tar.gz" $= CZ.ungzip
 
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
     cfg = Configuration Timestamp Credentials
-        { accessKeyID     = T.encodeUtf8 (pack s3AccessKey)
-        , secretAccessKey = T.encodeUtf8 (pack s3SecretKey) }
+        { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
+        , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey) }
         (defaultLog (if verbose then Aws.Debug else Aws.Error))
 
     svccfg = defServiceConfig
@@ -378,8 +377,8 @@ mirrorHackage Options {..} =
     runLogger = flip runLoggingT $ logger $
         if verbose then LevelDebug else LevelInfo
 
-    from = pack mirrorFrom
-    to   = pack mirrorTo
+    from = mirrorFrom
+    to   = mirrorTo
 
 outputMutex :: MVar ()
 {-# NOINLINE outputMutex #-}
@@ -391,7 +390,7 @@ logger maxLvl _loc src lvl logStr = when (lvl >= maxLvl) $ do
     let stamp = formatTime defaultTimeLocale "%b-%d %H:%M:%S" now
     holding outputMutex $
         putStrLn $ stamp ++ " " ++ renderLevel lvl
-                ++ " " ++ renderSource src ++ unpack (renderLogStr logStr)
+                ++ " " ++ renderSource src ++ renderLogStr logStr
   where
     holding mutex = withMVar mutex . const
 
@@ -399,12 +398,12 @@ logger maxLvl _loc src lvl logStr = when (lvl >= maxLvl) $ do
     renderLevel LevelInfo  = "[INFO]"
     renderLevel LevelWarn  = "[WARN]"
     renderLevel LevelError = "[ERROR]"
-    renderLevel (LevelOther txt) = "[" ++ unpack txt ++ "]"
+    renderLevel (LevelOther txt) = "[" ++ T.unpack txt ++ "]"
 
-    renderSource :: Text -> String
+    renderSource :: LogSource -> String
     renderSource txt
         | T.null txt = ""
-        | otherwise  = unpack txt ++ ": "
+        | otherwise  = T.unpack txt ++ ": "
 
-    renderLogStr (LS s)  = pack s
-    renderLogStr (LB bs) = T.decodeUtf8 bs
+    renderLogStr (LS s)  = s
+    renderLogStr (LB bs) = T.unpack (T.decodeUtf8 bs)
