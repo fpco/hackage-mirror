@@ -300,8 +300,9 @@ mirrorHackage Options {..} =
             -- calculated, so we write it first to a temp file and then only
             -- upload it if necessary.
             ch <- liftIO $ readTVarIO changed
-            when ch $ void $
-                push mgr "00-index.tar.gz" $ CB.sourceFile temp
+            when ch $ void $ do
+                _ <- push mgr "00-index.tar.gz" $ CB.sourceFile temp
+                $(logInfo) [st|Uploaded 00-index.tar.gz|]
 
     processEntries mgr sums newSums changed =
         CL.mapMaybeM $ \pkg@(Package {..}) -> do
@@ -324,9 +325,12 @@ mirrorHackage Options {..} =
         (el, er) <-
             if rebuild
             then return (Right (), Right ())
-            else concurrently
-                (push mgr upath $ download cfg svccfg mgr from dpath)
-                (push mgr cabal $ CB.sourceLbs (packageCabal pkg))
+            else do
+                res <- concurrently
+                    (push mgr upath $ download cfg svccfg mgr from dpath)
+                    (push mgr cabal $ CB.sourceLbs (packageCabal pkg))
+                $(logInfo) [st|Mirrored #{fname}|]
+                return res
         case (el, er) of
             (Right (), Right ()) -> liftIO $ atomically $ do
                 writeTVar changed True
@@ -339,7 +343,7 @@ mirrorHackage Options {..} =
     push mgr file src = do
         eres <- try $ liftResourceT $ upload cfg svccfg mgr to file src
         case eres of
-            Right () -> $(logInfo) [st|Uploaded #{file}|]
+            Right () -> return ()
             Left e -> do
                 let msg = T.pack (show (e :: SomeException))
                 unless ("No tarball exists for this package version"
@@ -356,8 +360,9 @@ mirrorHackage Options {..} =
                      Left _    -> M.empty
                      Right res -> M.fromList res
 
-    putChecksums mgr file sums =
+    putChecksums mgr file sums = do
         void $ push mgr file $ yield (encode (M.toList sums))
+        $(logInfo) [st|Uploaded #{file}|]
 
     getEntries mgr = do
         $(logInfo) [st|Downloading index.tar.gz from #{from}|]
