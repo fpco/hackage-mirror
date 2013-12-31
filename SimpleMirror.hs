@@ -38,6 +38,7 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Lazy as CL
 import qualified Data.Conduit.List as CL
 import           Data.Conduit.Zlib as CZ
+import           Data.Default (def)
 import           Data.Int
 import qualified Data.HashMap.Strict as M
 import           Data.List
@@ -47,7 +48,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Text.Lazy.Builder
 import           Data.Thyme
-import           Language.Haskell.TH.Syntax hiding (lift)
 import           Network.HTTP.Conduit hiding (Response)
 import           Options.Applicative as Opt
 import           Prelude hiding (catch)
@@ -410,5 +410,4 @@ logger maxLvl _loc src lvl logStr = when (lvl >= maxLvl) $ do
         | T.null txt = ""
         | otherwise  = T.unpack txt ++ ": "
 
-    renderLogStr (LS s)  = s
-    renderLogStr (LB bs) = T.unpack (T.decodeUtf8 bs)
+    renderLogStr = T.unpack . T.decodeUtf8 . fromLogStr

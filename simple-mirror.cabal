@@ -21,6 +21,7 @@ executable simple-mirror
     , cereal
     , conduit
     , cryptohash
+    , data-default
     , directory
     , failure
     , fast-logger
