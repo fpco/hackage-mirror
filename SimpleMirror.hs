@@ -92,9 +92,6 @@ options = Options
     <*> strOption (long "access" <> value "" <> help "S3 access key")
     <*> strOption (long "secret" <> value "" <> help "S3 secret key")
 
-instance ToText Int where
-    toText = fromString . show
-
 instance MonadActive m => MonadActive (LoggingT m) where
     monadActive = lift monadActive
 
