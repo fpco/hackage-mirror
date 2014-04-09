@@ -39,14 +39,12 @@ import qualified Data.Conduit.Lazy as CL
 import qualified Data.Conduit.List as CL
 import           Data.Conduit.Zlib as CZ
 import           Data.Default (def)
-import           Data.Int
 import qualified Data.HashMap.Strict as M
 import           Data.List
 import           Data.Monoid
 import           Data.Serialize hiding (label)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import           Data.Text.Lazy.Builder
 import           Data.Thyme
 import           Network.HTTP.Conduit hiding (Response)
 import           Options.Applicative as Opt
