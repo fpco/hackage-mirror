@@ -15,15 +15,14 @@ executable simple-mirror
   main-is: SimpleMirror.hs
   build-depends:       
       base >=4.5
-    , attempt
     , aws
     , bytestring
     , cereal
     , conduit
+    , conduit-extra
     , cryptohash
     , data-default
     , directory
-    , failure
     , fast-logger
     , filepath
     , http-conduit
@@ -36,7 +35,7 @@ executable simple-mirror
     , optparse-applicative
     , resourcet
     , retry
-    , shakespeare-text
+    , shakespeare
     , stm
     , tar
     , template-haskell
@@ -45,4 +44,3 @@ executable simple-mirror
     , thyme
     , transformers
     , unordered-containers
-    , zlib-conduit

@@ -20,7 +20,6 @@ import           Control.Concurrent.Async.Lifted
 import           Control.Concurrent.Lifted hiding (yield)
 import           Control.Concurrent.STM
 import           Control.Exception.Lifted
-import           Control.Failure
 import           Control.Monad hiding (forM_)
 import           Control.Monad.IO.Class
 import           Control.Monad.Logger
@@ -29,7 +28,6 @@ import           Control.Monad.Trans.Control
 import           Control.Monad.Trans.Resource
 import           Control.Retry
 import qualified Crypto.Hash.SHA512 as SHA512
-import           Data.Attempt (isFailure)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
@@ -39,6 +37,7 @@ import qualified Data.Conduit.Lazy as CL
 import qualified Data.Conduit.List as CL
 import           Data.Conduit.Zlib as CZ
 import           Data.Default (def)
+import           Data.IORef (newIORef)
 import qualified Data.HashMap.Strict as M
 import           Data.List
 import           Data.Monoid
@@ -90,9 +89,6 @@ options = Options
     <*> strOption (long "access" <> value "" <> help "S3 access key")
     <*> strOption (long "secret" <> value "" <> help "S3 secret key")
 
-instance MonadActive m => MonadActive (LoggingT m) where
-    monadActive = lift monadActive
-
 data Package = Package
     { packageName       :: !String
     , packageVersion    :: !String
@@ -113,7 +109,7 @@ pathKind url
     | otherwise = FilePath
 
 indexPackages :: (MonadLogger m, MonadThrow m, MonadBaseControl IO m,
-                  MonadActive m)
+                  CL.MonadActive m)
               => Source m ByteString -> Source m Package
 indexPackages src = do
     lbs <- lift $ CL.lazyConsume src
@@ -141,7 +137,7 @@ downloadFromPath path file = do
     when exists $ CB.sourceFile p
 
 downloadFromUrl :: (MonadResource m, MonadBaseControl IO m,
-                    Failure HttpException m)
+                    MonadThrow m)
                 => Manager -> String -> String -> Source m ByteString
 downloadFromUrl mgr path file = do
     req  <- lift $ parseUrl (path </> file)
@@ -165,7 +161,10 @@ awsRetry :: (MonadIO m, Transaction r a)
          -> ResourceT m (Response (ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
-        retrying def (isFailure . responseResult) $ aws cfg svcfg mgr r
+        retrying def (isLeft . responseResult) $ aws cfg svcfg mgr r
+  where
+    isLeft Left{} = True
+    isLeft Right{} = False
 
 downloadFromS3 :: MonadResource m
                => Configuration
@@ -186,7 +185,7 @@ downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
                     responseBody (Aws.gorResponse gor)
                 hoist liftResourceT src
 
-download :: (MonadResource m, MonadBaseControl IO m, Failure HttpException m)
+download :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
          => Configuration
          -> Aws.S3Configuration NormalQuery
          -> Manager
@@ -206,7 +205,7 @@ uploadToPath path file src = do
     liftIO $ createDirectoryIfMissing True (takeDirectory p)
     src $$ CB.sinkFile p
 
-uploadToUrl :: (MonadResource m, MonadBaseControl IO m, Failure HttpException m)
+uploadToUrl :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
               => Manager -> String -> String -> Source m ByteString -> m ()
 uploadToUrl _mgr _path _file _src = error "uploadToUrl not implemented"
 
@@ -264,21 +263,23 @@ main = execParser opts >>= mirrorHackage
                  <> header "simple-mirror - mirror only the minimum")
 
 mirrorHackage :: Options -> IO ()
-mirrorHackage Options {..} =
+mirrorHackage Options {..} = do
+    ref <- newIORef []
+    let cfg = mkCfg ref
     runLogger $ withManager $ \mgr -> do
-        sums <- getChecksums mgr
-        putChecksums mgr "00-checksums.bak" sums
+        sums <- getChecksums cfg mgr
+        putChecksums cfg mgr "00-checksums.bak" sums
         newSums <- liftIO $ newTVarIO sums
         changed <- liftIO $ newTVarIO False
-        void $ go mgr sums newSums changed `finally` do
+        void $ go cfg mgr sums newSums changed `finally` do
             ch <- liftIO $ readTVarIO changed
             when ch $ do
                 sums' <- liftIO $ readTVarIO newSums
-                putChecksums mgr "00-checksums.dat" sums'
+                putChecksums cfg mgr "00-checksums.dat" sums'
   where
-    go mgr sums newSums changed = do
+    go cfg mgr sums newSums changed = do
         ents <- CL.lazyConsume $
-            getEntries mgr $= processEntries mgr sums newSums changed
+            getEntries cfg mgr $= processEntries cfg mgr sums newSums changed
 
         -- Use a temp file as a "backing store" to accumulate the new tarball.
         -- Only when it is complete and we've reached the end normally do we
@@ -296,10 +297,10 @@ mirrorHackage Options {..} =
             -- upload it if necessary.
             ch <- liftIO $ readTVarIO changed
             when ch $ void $ do
-                _ <- push mgr "00-index.tar.gz" $ CB.sourceFile temp
+                _ <- push cfg mgr "00-index.tar.gz" $ CB.sourceFile temp
                 $(logInfo) [st|Uploaded 00-index.tar.gz|]
 
-    processEntries mgr sums newSums changed =
+    processEntries cfg mgr sums newSums changed =
         CL.mapMaybeM $ \pkg@(Package {..}) -> do
             let sha = SHA512.hashlazy packageCabal
                 et  = Tar.entryTime packageTarEntry
@@ -307,11 +308,11 @@ mirrorHackage Options {..} =
                     Nothing -> True
                     Just (et', _sha') -> et /= et' -- || sha /= sha'
             valid <- if new
-                     then mirror mgr pkg sha newSums changed
+                     then mirror cfg mgr pkg sha newSums changed
                      else return True
             return $ mfilter (const valid) (Just packageTarEntry)
 
-    mirror mgr pkg sha newSums changed = do
+    mirror cfg mgr pkg sha newSums changed = do
         let fname = packageFullName pkg
             dir   = "package" </> fname
             upath = addExtension dir ".tar.gz"
@@ -322,8 +323,8 @@ mirrorHackage Options {..} =
             then return (Right (), Right ())
             else do
                 res <- concurrently
-                    (push mgr upath $ download cfg svccfg mgr from dpath)
-                    (push mgr cabal $ CB.sourceLbs (packageCabal pkg))
+                    (push cfg mgr upath $ download cfg svccfg mgr from dpath)
+                    (push cfg mgr cabal $ CB.sourceLbs (packageCabal pkg))
                 $(logInfo) [st|Mirrored #{fname}|]
                 return res
         case (el, er) of
@@ -335,7 +336,7 @@ mirrorHackage Options {..} =
                 return True
             _ -> return False
 
-    push mgr file src = do
+    push cfg mgr file src = do
         eres <- try $ liftResourceT $ upload cfg svccfg mgr to file src
         case eres of
             Right () -> return ()
@@ -346,7 +347,7 @@ mirrorHackage Options {..} =
                     $(logError) $ "FAILED " <> T.pack file <> ": " <> msg
         return eres
 
-    getChecksums mgr = do
+    getChecksums cfg mgr = do
         sums <- download cfg svccfg mgr to "00-checksums.dat" $$ CB.sinkLbs
         $(logInfo) [st|Downloaded checksums.dat from #{to}|]
         return $ if BL.null sums
@@ -355,11 +356,11 @@ mirrorHackage Options {..} =
                      Left _    -> M.empty
                      Right res -> M.fromList res
 
-    putChecksums mgr file sums = do
-        void $ push mgr file $ yield (encode (M.toList sums))
+    putChecksums cfg mgr file sums = do
+        void $ push cfg mgr file $ yield (encode (M.toList sums))
         $(logInfo) [st|Uploaded #{file}|]
 
-    getEntries mgr = do
+    getEntries cfg mgr = do
         $(logInfo) [st|Downloading index.tar.gz from #{from}|]
         indexPackages $
             download cfg svccfg mgr from "00-index.tar.gz" $= CZ.ungzip
@@ -367,9 +368,11 @@ mirrorHackage Options {..} =
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    cfg = Configuration Timestamp Credentials
+    mkCfg ref = Configuration Timestamp Credentials
         { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
-        , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey) }
+        , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
+        , v4SigningKeys   = ref
+        }
         (defaultLog (if verbose then Aws.Debug else Aws.Error))
 
     svccfg = defServiceConfig
