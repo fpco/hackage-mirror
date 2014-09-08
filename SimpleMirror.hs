@@ -47,7 +47,6 @@ import qualified Data.Text.Encoding as T
 import           Data.Thyme
 import           Network.HTTP.Conduit hiding (Response)
 import           Options.Applicative as Opt
-import           Prelude hiding (catch)
 import           System.Directory
 import           System.FilePath
 import           System.IO
