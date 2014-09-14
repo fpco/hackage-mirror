@@ -371,6 +371,7 @@ mirrorHackage Options {..} = do
         { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
         , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
         , v4SigningKeys   = ref
+        , iamToken        = Nothing
         }
         (defaultLog (if verbose then Aws.Debug else Aws.Error))
 
