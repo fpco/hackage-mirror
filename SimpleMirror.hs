@@ -40,7 +40,6 @@ import           Data.Default (def)
 import           Data.IORef (newIORef)
 import qualified Data.HashMap.Strict as M
 import           Data.List
-import           Data.Monoid
 import           Data.Serialize hiding (label)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -160,7 +159,7 @@ awsRetry :: (MonadIO m, Transaction r a)
          -> ResourceT m (Response (ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
-        retrying def (isLeft . responseResult) $ aws cfg svcfg mgr r
+        retrying def (const $ return . isLeft . responseResult) $ aws cfg svcfg mgr r
   where
     isLeft Left{} = True
     isLeft Right{} = False
