@@ -26,6 +26,7 @@ executable simple-mirror
     , directory
     , fast-logger
     , filepath
+    , fpco-extras
     , http-conduit
     , lifted-async
     , lifted-base
@@ -35,7 +36,6 @@ executable simple-mirror
     , old-locale
     , optparse-applicative
     , resourcet
-    , retry
     , shakespeare
     , stm
     , tar
