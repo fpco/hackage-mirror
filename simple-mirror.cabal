@@ -35,7 +35,9 @@ executable simple-mirror
     , monad-logger
     , old-locale
     , optparse-applicative
+    , redis-fp
     , resourcet
+    , retry
     , shakespeare
     , stm
     , tar
