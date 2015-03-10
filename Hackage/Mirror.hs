@@ -7,8 +7,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-
 module Hackage.Mirror where
 
 import           Aws hiding (LogLevel, logger)
