@@ -258,7 +258,7 @@ main = execParser opts >>= mirrorHackage
     opts = info (helper <*> options)
                 (fullDesc
                  <> progDesc "Mirror the necessary parts of Hackage"
-                 <> header "simple-mirror - mirror only the minimum")
+                 <> header "hackage-mirror - mirror only the minimum")
 
 mirrorHackage :: Options -> IO ()
 mirrorHackage Options {..} = do

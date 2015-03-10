@@ -1,4 +1,4 @@
-name:          simple-mirror
+name:          hackage-mirror
 version:       0.1.0.0
 synopsis:      Simple mirroring utility for Hackage
 homepage:      http://fpcomplete.com
@@ -10,10 +10,10 @@ category:      Network
 build-type:    Simple
 cabal-version: >=1.10
 
-executable simple-mirror
+executable hackage-mirror
   ghc-options: -Wall -fwarn-incomplete-record-updates
   default-language: Haskell2010
-  main-is: SimpleMirror.hs
+  main-is: HackageMirror.hs
   build-depends:
       base >=4.5
     , aws
