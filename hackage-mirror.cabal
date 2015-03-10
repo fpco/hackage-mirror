@@ -1,47 +1,81 @@
-name:          hackage-mirror
-version:       0.1.0.0
-synopsis:      Simple mirroring utility for Hackage
-homepage:      http://fpcomplete.com
-license:       BSD3
-license-file:  LICENSE
-author:        John Wiegley
-maintainer:    johnw@fpcomplete.com
-category:      Network
-build-type:    Simple
-cabal-version: >=1.10
+name:                hackage-mirror
+version:             0.1.0.0
+synopsis:            Simple mirroring utility for Hackage
+homepage:            http://fpcomplete.com
+license:             BSD3
+license-file:        LICENSE
+author:              John Wiegley
+maintainer:          johnw@fpcomplete.com
+category:            Distribution
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  default-language:    Haskell2010
+  exposed-modules:     Hackage.Mirror
+                       Hackage.Mirror.Types
+  build-depends:       base >=4.5
+                     , aws
+                     , bytestring
+                     , cereal
+                     , conduit
+                     , conduit-extra
+                     , cryptohash
+                     , data-default
+                     , directory
+                     , fast-logger
+                     , filepath
+                     , http-conduit
+                     , lifted-async
+                     , lifted-base
+                     , mmorph
+                     , monad-control
+                     , monad-logger
+                     , old-locale
+                     , resourcet
+                     , retry
+                     , shakespeare
+                     , stm
+                     , tar
+                     , template-haskell
+                     , temporary
+                     , text
+                     , thyme
+                     , transformers
+                     , unordered-containers
 
 executable hackage-mirror
-  ghc-options: -Wall -fwarn-incomplete-record-updates
-  default-language: Haskell2010
-  main-is: HackageMirror.hs
-  build-depends:
-      base >=4.5
-    , aws
-    , bytestring
-    , cereal
-    , conduit
-    , conduit-extra
-    , cryptohash
-    , data-default
-    , directory
-    , fast-logger
-    , filepath
-    , http-conduit
-    , lifted-async
-    , lifted-base
-    , mmorph
-    , monad-control
-    , monad-logger
-    , old-locale
-    , optparse-applicative
-    , resourcet
-    , retry
-    , shakespeare
-    , stm
-    , tar
-    , template-haskell
-    , temporary
-    , text
-    , thyme
-    , transformers
-    , unordered-containers
+  default-language:    Haskell2010
+  main-is:             Main.hs
+  build-depends:       base >=4.5
+                     , aws
+                     , bytestring
+                     , cereal
+                     , conduit
+                     , conduit-extra
+                     , cryptohash
+                     , data-default
+                     , directory
+                     , fast-logger
+                     , filepath
+                     , hackage-mirror
+                     , http-conduit
+                     , lifted-async
+                     , lifted-base
+                     , mmorph
+                     , monad-control
+                     , monad-logger
+                     , old-locale
+                     , optparse-applicative
+                     , resourcet
+                     , retry
+                     , shakespeare
+                     , stm
+                     , tar
+                     , template-haskell
+                     , temporary
+                     , text
+                     , thyme
+                     , transformers
+                     , unordered-containers

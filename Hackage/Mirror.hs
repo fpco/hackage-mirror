@@ -9,13 +9,12 @@
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Main where
+module Hackage.Mirror where
 
 import           Aws hiding (LogLevel, logger)
 import qualified Aws.S3 as Aws
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
-import           Control.Applicative
 import           Control.Concurrent.Async.Lifted
 import           Control.Concurrent.Lifted hiding (yield)
 import           Control.Concurrent.STM
@@ -37,15 +36,15 @@ import qualified Data.Conduit.Lazy as CL
 import qualified Data.Conduit.List as CL
 import           Data.Conduit.Zlib as CZ
 import           Data.Default (def)
-import           Data.IORef (newIORef)
 import qualified Data.HashMap.Strict as M
+import           Data.IORef (newIORef)
 import           Data.List
 import           Data.Serialize hiding (label)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Thyme
+import           Hackage.Mirror.Types
 import           Network.HTTP.Conduit hiding (Response)
-import           Options.Applicative as Opt
 import           System.Directory
 import           System.FilePath
 import           System.IO
@@ -54,15 +53,6 @@ import           System.IO.Unsafe (unsafePerformIO)
 import           System.Locale
 import           System.Log.FastLogger hiding (check)
 import           Text.Shakespeare.Text
-
-data Options = Options
-    { verbose     :: Bool
-    , rebuild     :: Bool
-    , mirrorFrom  :: String
-    , mirrorTo    :: String
-    , s3AccessKey :: String
-    , s3SecretKey :: String
-    }
 
 defaultOptions :: Options
 defaultOptions = Options
@@ -77,28 +67,8 @@ defaultOptions = Options
 hackageBaseUrl :: String
 hackageBaseUrl = "http://hackage.haskell.org"
 
-options :: Opt.Parser Options
-options = Options
-    <$> switch (long "verbose" <> help "Display verbose output")
-    <*> switch (long "rebuild" <> help "Don't mirror; used for rebuilding")
-    <*> strOption (long "from" <> value hackageBaseUrl
-                   <> help "Base URL to mirror from")
-    <*> strOption (long "to" <> help "Base URL of server mirror to")
-    <*> strOption (long "access" <> value "" <> help "S3 access key")
-    <*> strOption (long "secret" <> value "" <> help "S3 secret key")
-
-data Package = Package
-    { packageName       :: !String
-    , packageVersion    :: !String
-    , packageCabal      :: !BL.ByteString
-    , packageIdentifier :: !ByteString
-    , packageTarEntry   :: !Tar.Entry
-    }
-
 packageFullName :: Package -> String
 packageFullName Package {..} = packageName <> "-" <> packageVersion
-
-data PathKind = UrlPath | S3Path | FilePath
 
 pathKind :: String -> PathKind
 pathKind url
@@ -251,14 +221,6 @@ backingFile fp =
             Just res -> do
                 liftIO $ B.hPut h res
                 loop h
-
-main :: IO ()
-main = execParser opts >>= mirrorHackage
-  where
-    opts = info (helper <*> options)
-                (fullDesc
-                 <> progDesc "Mirror the necessary parts of Hackage"
-                 <> header "hackage-mirror - mirror only the minimum")
 
 mirrorHackage :: Options -> IO ()
 mirrorHackage Options {..} = do
