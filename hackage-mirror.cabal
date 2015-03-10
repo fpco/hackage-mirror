@@ -26,7 +26,6 @@ executable hackage-mirror
     , directory
     , fast-logger
     , filepath
-    , fpco-extras
     , http-conduit
     , lifted-async
     , lifted-base
@@ -35,7 +34,6 @@ executable hackage-mirror
     , monad-logger
     , old-locale
     , optparse-applicative
-    , redis-fp
     , resourcet
     , retry
     , shakespeare
