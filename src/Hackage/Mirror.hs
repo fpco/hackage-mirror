@@ -70,16 +70,12 @@ import Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
 import Data.ByteString ( ByteString )
 import Data.ByteString ()
-import qualified Data.ByteString as B ( hPut )
 import qualified Data.ByteString.Lazy as BL
     ( ByteString, null, fromChunks )
 import Data.Conduit
     ( Source,
-      Conduit,
       yield,
       unwrapResumable,
-      bracketP,
-      await,
       ($=),
       ($$) )
 import qualified Data.Conduit.Binary as CB
@@ -108,25 +104,12 @@ import Network.HTTP.Conduit
 import System.Directory ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath
     ( splitDirectories, addExtension, takeDirectory, (</>) )
-import System.IO ( IOMode(WriteMode), openFile, hClose )
+import System.IO ( hClose )
 import System.IO.Temp ( withSystemTempFile )
 import System.IO.Unsafe ( unsafePerformIO )
 import System.Locale ( defaultTimeLocale )
 import System.Log.FastLogger ( fromLogStr )
 import Text.Shakespeare.Text ( st )
-
-defaultOptions :: Options
-defaultOptions = Options
-    { verbose     = False
-    , rebuild     = False
-    , mirrorFrom  = ""
-    , mirrorTo    = ""
-    , s3AccessKey = ""
-    , s3SecretKey = ""
-    }
-
-hackageBaseUrl :: String
-hackageBaseUrl = "http://hackage.haskell.org"
 
 -- | Options for running Hackage Mirror
 data Options =
@@ -256,10 +239,6 @@ uploadToPath path file src = do
     liftIO $ createDirectoryIfMissing True (takeDirectory p)
     src $$ CB.sinkFile p
 
-uploadToUrl :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
-              => Manager -> String -> String -> Source m ByteString -> m ()
-uploadToUrl _mgr _path _file _src = error "uploadToUrl not implemented"
-
 uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
            => Aws.Configuration
            -> Aws.S3Configuration Aws.NormalQuery
@@ -288,22 +267,6 @@ upload :: (MonadResource m, m ~ ResourceT IO)
 upload cfg svccfg mgr path@(pathKind -> S3Path) =
     uploadToS3 cfg svccfg mgr (T.pack path)
 upload _ _ _ path = uploadToPath path
-
-backingFile :: MonadResource m
-           => FilePath
-           -> Conduit ByteString m ByteString
-backingFile fp =
-    bracketP (liftIO (openFile fp WriteMode)) (liftIO . hClose) loop
-  where
-    loop h = do
-        mres <- await
-        case mres of
-            Nothing -> do
-                liftIO $ hClose h
-                CB.sourceFile fp
-            Just res -> do
-                liftIO $ B.hPut h res
-                loop h
 
 mirrorHackage :: Options -> IO ()
 mirrorHackage Options {..} = do
