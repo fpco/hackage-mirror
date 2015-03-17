@@ -20,7 +20,7 @@ options :: Parser Options
 options = Options
     <$> switch (long "verbose" <> help "Display verbose output")
     <*> switch (long "rebuild" <> help "Don't mirror; used for rebuilding")
-    <*> strOption (long "from" <> value hackageBaseUrl
+    <*> strOption (long "from" <> value "http://hackage.haskell.org"
                    <> help "Base URL to mirror from")
     <*> strOption (long "to" <> help "Base URL of server mirror to")
     <*> strOption (long "access" <> value "" <> help "S3 access key")
