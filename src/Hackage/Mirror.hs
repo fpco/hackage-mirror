@@ -7,7 +7,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Hackage.Mirror where
+module Hackage.Mirror (Options(..), mirrorHackage)
+       where
 
 import qualified Aws as Aws
     ( Transaction,
@@ -94,8 +95,6 @@ import Data.Serialize ( encode, decodeLazy )
 import qualified Data.Text as T ( unpack, pack, null, isInfixOf )
 import qualified Data.Text.Encoding as T ( encodeUtf8, decodeUtf8 )
 import Data.Thyme ( formatTime, getCurrentTime )
-import Hackage.Mirror.Types
-    ( PathKind(..), Package(..), Options(..) )
 import Network.HTTP.Conduit
     ( Response(responseBody),
       RequestBody(RequestBodyLBS),
@@ -125,6 +124,31 @@ defaultOptions = Options
 
 hackageBaseUrl :: String
 hackageBaseUrl = "http://hackage.haskell.org"
+import qualified Codec.Archive.Tar as Tar ()
+import Data.ByteString ()
+import qualified Data.ByteString.Lazy as BL ( ByteString )
+
+-- | Options for running Hackage Mirror
+data Options =
+  Options {verbose :: Bool       -- ^ verbose command line output
+          ,rebuild :: Bool       -- ^ rebuild the mirror
+          ,mirrorFrom :: String  -- ^ from (source) of the mirror
+          ,mirrorTo :: String    -- ^ to (destination) of the mirror
+          ,s3AccessKey :: String -- ^ amazon access key ID for s3
+          ,s3SecretKey :: String -- ^ amazon secret access key for s3
+          }
+
+data Package =
+  Package {packageName :: !String
+          ,packageVersion :: !String
+          ,packageCabal :: !BL.ByteString
+          ,packageIdentifier :: !ByteString
+          ,packageTarEntry :: !Tar.Entry}
+
+data PathKind
+  = UrlPath
+  | S3Path
+  | FilePath
 
 packageFullName :: Package -> String
 packageFullName Package {..} = packageName <> "-" <> packageVersion

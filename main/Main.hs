@@ -1,6 +1,5 @@
 import Control.Applicative ( Applicative((<*>)), (<$>) )
-import Hackage.Mirror ( mirrorHackage )
-import Hackage.Mirror.Types ( Options(Options) )
+import Hackage.Mirror ( Options(..), mirrorHackage )
 import Options.Applicative
     ( Parser,
       helper,
