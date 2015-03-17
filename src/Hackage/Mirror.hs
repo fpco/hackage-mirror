@@ -39,6 +39,7 @@ import qualified Codec.Archive.Tar as Tar
       write,
       entryPath,
       read )
+import qualified Codec.Archive.Tar as Tar ()
 import qualified Codec.Archive.Tar.Entry as Tar
     ( Entry(entryTime) )
 import Control.Concurrent.Async.Lifted ( concurrently )
@@ -68,8 +69,10 @@ import Control.Monad.Trans.Resource
 import Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
 import Data.ByteString ( ByteString )
+import Data.ByteString ()
 import qualified Data.ByteString as B ( hPut )
-import qualified Data.ByteString.Lazy as BL ( null, fromChunks )
+import qualified Data.ByteString.Lazy as BL
+    ( ByteString, null, fromChunks )
 import Data.Conduit
     ( Source,
       Conduit,
@@ -124,9 +127,6 @@ defaultOptions = Options
 
 hackageBaseUrl :: String
 hackageBaseUrl = "http://hackage.haskell.org"
-import qualified Codec.Archive.Tar as Tar ()
-import Data.ByteString ()
-import qualified Data.ByteString.Lazy as BL ( ByteString )
 
 -- | Options for running Hackage Mirror
 data Options =
