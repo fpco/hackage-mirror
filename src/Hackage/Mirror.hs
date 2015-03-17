@@ -9,7 +9,7 @@
 
 module Hackage.Mirror where
 
-import           Aws hiding (LogLevel, logger)
+import qualified Aws as Aws
 import qualified Aws.S3 as Aws
 import qualified Codec.Archive.Tar as Tar
 import qualified Codec.Archive.Tar.Entry as Tar
@@ -42,7 +42,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Thyme
 import           Hackage.Mirror.Types
-import           Network.HTTP.Conduit hiding (Response)
+import           Network.HTTP.Conduit
 import           System.Directory
 import           System.FilePath
 import           System.IO
@@ -119,22 +119,22 @@ withS3 url file f = case splitDirectories (T.unpack url) of
     ["s3:", bucket, prefix] -> f (T.pack bucket) $ prefix </> file
     _ -> monadThrow $ userError $ "Failed to parse S3 path: " ++ T.unpack url
 
-awsRetry :: (MonadIO m, Transaction r a)
-         => Configuration
-         -> ServiceConfiguration r NormalQuery
+awsRetry :: (MonadIO m, Aws.Transaction r a)
+         => Aws.Configuration
+         -> Aws.ServiceConfiguration r Aws.NormalQuery
          -> Manager
          -> r
-         -> ResourceT m (Response (ResponseMetadata a) a)
+         -> ResourceT m (Aws.Response (Aws.ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
-        retrying def (const $ return . isLeft . responseResult) $ aws cfg svcfg mgr r
+        retrying def (const $ return . isLeft . Aws.responseResult) $ Aws.aws cfg svcfg mgr r
   where
     isLeft Left{} = True
     isLeft Right{} = False
 
 downloadFromS3 :: MonadResource m
-               => Configuration
-               -> Aws.S3Configuration NormalQuery
+               => Aws.Configuration
+               -> Aws.S3Configuration Aws.NormalQuery
                -> Manager
                -> Aws.Bucket
                -> String
@@ -143,7 +143,7 @@ downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
     go bucket' (T.pack -> file') = do
         res  <- liftResourceT $
             awsRetry cfg svccfg mgr $ Aws.getObject bucket' file'
-        case readResponse res of
+        case Aws.readResponse res of
             Left (_ :: SomeException) -> return ()
             Right gor -> do
                 -- jww (2013-11-20): What to do with fin?
@@ -152,8 +152,8 @@ downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
                 hoist liftResourceT src
 
 download :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
-         => Configuration
-         -> Aws.S3Configuration NormalQuery
+         => Aws.Configuration
+         -> Aws.S3Configuration Aws.NormalQuery
          -> Manager
          -> String               -- ^ The server path, like /tmp/foo
          -> String               -- ^ The file's path within the server path
@@ -176,8 +176,8 @@ uploadToUrl :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
 uploadToUrl _mgr _path _file _src = error "uploadToUrl not implemented"
 
 uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
-           => Configuration
-           -> Aws.S3Configuration NormalQuery
+           => Aws.Configuration
+           -> Aws.S3Configuration Aws.NormalQuery
            -> Manager
            -> Aws.Bucket
            -> String
@@ -190,11 +190,11 @@ uploadToS3 cfg svccfg mgr bucket file src = withS3 bucket file go where
             Aws.putObject bucket' file' (RequestBodyLBS lbs)
         -- Reading the response triggers an exception if one occurred during
         -- the upload.
-        void $ readResponseIO res
+        void $ Aws.readResponseIO res
 
 upload :: (MonadResource m, m ~ ResourceT IO)
-       => Configuration
-       -> Aws.S3Configuration NormalQuery
+       => Aws.Configuration
+       -> Aws.S3Configuration Aws.NormalQuery
        -> Manager
        -> String
        -> String
@@ -326,15 +326,15 @@ mirrorHackage Options {..} = do
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    mkCfg ref = Configuration Timestamp Credentials
+    mkCfg ref = Aws.Configuration Aws.Timestamp Aws.Credentials
         { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
         , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
         , v4SigningKeys   = ref
         , iamToken        = Nothing
         }
-        (defaultLog (if verbose then Aws.Debug else Aws.Error))
+        (Aws.defaultLog (if verbose then Aws.Debug else Aws.Error))
 
-    svccfg = defServiceConfig
+    svccfg = Aws.defServiceConfig
 
     runLogger = flip runLoggingT $ logger $
         if verbose then LevelDebug else LevelInfo
