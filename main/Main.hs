@@ -1,7 +1,20 @@
-import Control.Applicative
-import Hackage.Mirror
-import Hackage.Mirror.Types
+import Control.Applicative ( Applicative((<*>)), (<$>) )
+import Hackage.Mirror ( mirrorHackage )
+import Hackage.Mirror.Types ( Options(Options) )
 import Options.Applicative
+    ( Parser,
+      helper,
+      execParser,
+      value,
+      switch,
+      strOption,
+      progDesc,
+      long,
+      info,
+      help,
+      header,
+      fullDesc,
+      (<>) )
 
 options :: Parser Options
 options = Options

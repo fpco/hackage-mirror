@@ -1,8 +1,8 @@
 module Hackage.Mirror.Types where
 
-import qualified Codec.Archive.Tar as Tar
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
+import qualified Codec.Archive.Tar as Tar (Entry)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as BL (ByteString)
 
 data Options = Options
     { verbose     :: Bool
