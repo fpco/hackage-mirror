@@ -327,7 +327,7 @@ mirrorHackage Options {..} = do
                 et  = Tar.entryTime packageTarEntry
                 new = case M.lookup packageIdentifier sums of
                     Nothing -> True
-                    Just (et', _sha') -> et /= et' -- || sha /= sha'
+                    Just (et', _sha') -> et /= et'
             valid <- if new
                      then mirror cfg mgr pkg sha newSums changed
                      else return True
