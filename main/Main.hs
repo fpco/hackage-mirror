@@ -1,3 +1,15 @@
+{-|
+Module      : Main
+Description : Create your own a mirror of Hackage (CLI)
+Copyright   : (c) FPComplete.com, 2015
+License     : MIT
+Maintainer  : John Wiegley <johnw@fpcomplete.com>
+Stability   : experimental
+Portability : POSIX
+
+This module is command line interface to the Hackage.Mirror library.
+-}
+
 import Control.Applicative ( Applicative((<*>)), (<$>) )
 import Hackage.Mirror ( Options(..), mirrorHackage )
 import Options.Applicative

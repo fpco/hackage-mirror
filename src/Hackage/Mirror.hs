@@ -7,6 +7,20 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
+{-|
+Module      : Hackage.Mirror
+Description : Create your own a mirror of Hackage
+Copyright   : (c) FPComplete.com, 2015
+License     : MIT
+Maintainer  : John Wiegley <johnw@fpcomplete.com>
+Stability   : experimental
+Portability : POSIX
+
+This module will help you create a mirror of Hackage on your own
+server or S3 bucket. An S3 bucket can be a cost effective way of
+serving a hackage mirror.
+-}
+
 module Hackage.Mirror (Options(..), mirrorHackage)
        where
 
@@ -111,14 +125,14 @@ import System.Locale ( defaultTimeLocale )
 import System.Log.FastLogger ( fromLogStr )
 import Text.Shakespeare.Text ( st )
 
--- | Options for running Hackage Mirror
+-- | Options to pass to mirrorHackage
 data Options =
-  Options {verbose :: Bool       -- ^ verbose command line output
-          ,rebuild :: Bool       -- ^ rebuild the mirror
-          ,mirrorFrom :: String  -- ^ from (source) of the mirror
-          ,mirrorTo :: String    -- ^ to (destination) of the mirror
-          ,s3AccessKey :: String -- ^ amazon access key ID for s3
-          ,s3SecretKey :: String -- ^ amazon secret access key for s3
+  Options {verbose :: Bool       -- ^ Verbose Output?
+          ,rebuild :: Bool       -- ^ Rebuild Mirror?
+          ,mirrorFrom :: String  -- ^ Hackage Source URL eg: https://hackage.haskell.org
+          ,mirrorTo :: String    -- ^ Mirror Destination URL eg: s3://my-hackage-mirror-bucket
+          ,s3AccessKey :: String -- ^ Amazon ACCESS_KEY_ID for S3
+          ,s3SecretKey :: String -- ^ Amazon SECRET_ACCESS_KEY for S3
           }
 
 data Package =
@@ -268,6 +282,7 @@ upload cfg svccfg mgr path@(pathKind -> S3Path) =
     uploadToS3 cfg svccfg mgr (T.pack path)
 upload _ _ _ path = uploadToPath path
 
+-- | Mirror Hackage using the supplied Options.
 mirrorHackage :: Options -> IO ()
 mirrorHackage Options {..} = do
     ref <- newIORef []
