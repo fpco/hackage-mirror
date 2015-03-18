@@ -2,7 +2,7 @@ name:                hackage-mirror
 version:             0.1.0.0
 synopsis:            Simple mirroring utility for Hackage
 homepage:            http://fpcomplete.com
-license:             BSD3
+license:             MIT
 license-file:        LICENSE
 author:              John Wiegley
 maintainer:          johnw@fpcomplete.com
