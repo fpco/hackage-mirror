@@ -4,7 +4,7 @@ A tool to create an AWS S3 mirror of Hackage.
 
 ## Install
 
-    cabal install --max-backjumps=-1 --reorder-goals
+    cabal install
 
 ## Usage
 
