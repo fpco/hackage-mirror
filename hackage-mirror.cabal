@@ -52,4 +52,5 @@ executable hackage-mirror
   main-is:             Main.hs
   build-depends:       base >=4.5
                      , hackage-mirror
+                     , monad-logger
                      , optparse-applicative
