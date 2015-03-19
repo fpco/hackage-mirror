@@ -25,9 +25,10 @@ import Options.Applicative
       header,
       fullDesc,
       (<>) )
+import Control.Monad.Logger
 
 main :: IO ()
-main = execParser optsParser >>= mirrorHackage
+main = execParser optsParser >>= runStdoutLoggingT . mirrorHackage
   where optsParser =
           info (helper <*> options)
                (fullDesc <>

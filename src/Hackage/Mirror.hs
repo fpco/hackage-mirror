@@ -24,6 +24,9 @@ serving a hackage mirror.
 module Hackage.Mirror (Options(..), mirrorHackage)
        where
 
+import           Control.Monad.Catch (MonadMask)
+import           Data.IORef
+
 import qualified Aws as Aws
     ( Transaction,
       TimeInfo(Timestamp),
@@ -45,7 +48,8 @@ import qualified Aws.S3 as Aws
       Bucket,
       GetObjectResponse(gorResponse),
       putObject,
-      getObject )
+      getObject)
+
 import qualified Codec.Archive.Tar as Tar
     ( Entry(entryContent),
       EntryContent(NormalFile),
@@ -55,14 +59,14 @@ import qualified Codec.Archive.Tar as Tar
       read )
 import qualified Codec.Archive.Tar.Entry as Tar
     ( Entry(entryTime) )
-import Control.Concurrent.Async.Lifted ( concurrently )
-import Control.Concurrent.Lifted ( MVar, withMVar, newMVar )
-import Control.Concurrent.STM
+import           Control.Concurrent.Async.Lifted ( concurrently )
+import           Control.Concurrent.Lifted ( MVar, withMVar, newMVar )
+import           Control.Concurrent.STM
     ( modifyTVar, writeTVar, readTVarIO, newTVarIO, atomically )
-import Control.Exception.Lifted ( SomeException, try, finally )
-import Control.Monad ( void, when, unless, mfilter )
-import Control.Monad.IO.Class ( MonadIO(..) )
-import Control.Monad.Logger
+import           Control.Exception.Lifted ( SomeException, try, finally )
+import           Control.Monad ( void, when, unless, mfilter )
+import           Control.Monad.IO.Class ( MonadIO(..) )
+import           Control.Monad.Logger
     ( LogStr,
       LogLevel(..),
       LogSource,
@@ -71,20 +75,20 @@ import Control.Monad.Logger
       MonadLogger,
       logInfo,
       logError )
-import Control.Monad.Morph ( MonadTrans(lift), MFunctor(hoist) )
-import Control.Monad.Trans.Control ( control, MonadBaseControl )
-import Control.Monad.Trans.Resource
+import           Control.Monad.Morph ( MonadTrans(lift), MFunctor(hoist) )
+import           Control.Monad.Trans.Control
+import           Control.Monad.Trans.Resource
     ( ResourceT,
       MonadResource(..),
       MonadThrow,
       transResourceT,
       monadThrow )
-import Control.Retry ( retrying, (<>) )
+import           Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
-import Data.ByteString ( ByteString )
+import           Data.ByteString ( ByteString )
 import qualified Data.ByteString.Lazy as BL
     ( ByteString, null, fromChunks )
-import Data.Conduit
+import           Data.Conduit
     ( Source,
       yield,
       unwrapResumable,
@@ -95,33 +99,34 @@ import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Lazy as CL
     ( MonadActive, lazyConsume )
 import qualified Data.Conduit.List as CL ( mapMaybeM )
-import Data.Conduit.Zlib as CZ
+import           Data.Conduit.Zlib as CZ
     ( WindowBits(WindowBits), ungzip, compress )
-import Data.Default ( def )
+import           Data.Default ( def )
 import qualified Data.HashMap.Strict as M
     ( insert, fromList, lookup, toList, empty )
-import Data.IORef ( newIORef )
-import Data.List ( isPrefixOf )
-import Data.Serialize ( encode, decodeLazy )
+import           Data.IORef ( newIORef )
+import           Data.List ( isPrefixOf )
+import           Data.Serialize ( encode, decodeLazy )
 import qualified Data.Text as T ( unpack, pack, null, isInfixOf )
 import qualified Data.Text.Encoding as T ( encodeUtf8, decodeUtf8 )
-import Data.Thyme ( formatTime, getCurrentTime )
-import Network.HTTP.Conduit
+import           Data.Thyme ( formatTime, getCurrentTime )
+import           Network.HTTP.Conduit
     ( Response(responseBody),
       RequestBody(RequestBodyLBS),
       Manager,
       withManager,
       http,
       parseUrl )
-import System.Directory ( doesFileExist, createDirectoryIfMissing )
-import System.FilePath
+import           System.Directory ( doesFileExist, createDirectoryIfMissing )
+import           System.FilePath
     ( splitDirectories, addExtension, takeDirectory, (</>) )
-import System.IO ( hClose )
-import System.IO.Temp ( withSystemTempFile )
-import System.IO.Unsafe ( unsafePerformIO )
-import System.Locale ( defaultTimeLocale )
-import System.Log.FastLogger ( fromLogStr )
-import Text.Shakespeare.Text ( st )
+import           System.IO ( hClose )
+import           System.IO.Temp ( withSystemTempFile )
+import           System.IO.Unsafe ( unsafePerformIO )
+import           System.Locale ( defaultTimeLocale )
+import           System.Log.FastLogger ( fromLogStr )
+import           Text.Shakespeare.Text ( st )
+import           Control.Monad.Logger
 
 -- | Options to pass to mirrorHackage
 data Options =
@@ -281,11 +286,11 @@ upload cfg svccfg mgr path@(pathKind -> S3Path) =
 upload _ _ _ path = uploadToPath path
 
 -- | Mirror Hackage using the supplied Options.
-mirrorHackage :: Options -> IO ()
+mirrorHackage :: (MonadMask m,MonadIO m,MonadLogger m,CL.MonadActive m,MonadBaseControl IO m) => Options -> m ()
 mirrorHackage Options {..} = do
-    ref <- newIORef []
-    let cfg = mkCfg ref
-    runLogger $ withManager $ \mgr -> do
+    ref <- liftIO $ newIORef []
+    cfg <- mkCfg
+    withManager $ \mgr -> do
         sums <- getChecksums cfg mgr
         putChecksums cfg mgr "00-checksums.bak" sums
         newSums <- liftIO $ newTVarIO sums
@@ -384,16 +389,22 @@ mirrorHackage Options {..} = do
         indexPackages $
             download cfg svccfg mgr from "00-index.tar.gz" $= CZ.ungzip
 
+    withTemp :: MonadBaseControl IO m => String -> (FilePath -> m ()) -> m ()
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    mkCfg ref = Aws.Configuration Aws.Timestamp Aws.Credentials
-        { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
-        , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
-        , v4SigningKeys   = ref
-        , iamToken        = Nothing
-        }
-        (Aws.defaultLog (if verbose then Aws.Debug else Aws.Error))
+    mkCfg :: (MonadBaseControl IO m,MonadLogger m) => m Aws.Configuration
+    mkCfg =
+       liftBaseWith $ \run -> do
+          return $ Aws.Configuration Aws.Timestamp Aws.Credentials
+             { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
+             , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
+             , v4SigningKeys   = undefined
+             , iamToken        = Nothing
+             }
+             -- (Aws.defaultLog (if verbose then Aws.Debug else Aws.Error))
+             (\logLevel text -> do stm <- run ($(logInfo) "TODO")
+                                   return ())
 
     svccfg = Aws.defServiceConfig
 
