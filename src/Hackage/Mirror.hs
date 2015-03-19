@@ -53,7 +53,6 @@ import qualified Codec.Archive.Tar as Tar
       write,
       entryPath,
       read )
-import qualified Codec.Archive.Tar as Tar ()
 import qualified Codec.Archive.Tar.Entry as Tar
     ( Entry(entryTime) )
 import Control.Concurrent.Async.Lifted ( concurrently )
@@ -83,7 +82,6 @@ import Control.Monad.Trans.Resource
 import Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
 import Data.ByteString ( ByteString )
-import Data.ByteString ()
 import qualified Data.ByteString.Lazy as BL
     ( ByteString, null, fromChunks )
 import Data.Conduit
