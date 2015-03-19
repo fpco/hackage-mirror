@@ -24,7 +24,7 @@ library
                      , cryptohash
                      , data-default
                      , directory
-                     , exceptions >= 0.8
+                     , exceptions
                      , fast-logger
                      , filepath
                      , http-conduit
