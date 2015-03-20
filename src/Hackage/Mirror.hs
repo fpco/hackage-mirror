@@ -413,35 +413,5 @@ mirrorHackage Options {..} = do
 
     svccfg = Aws.defServiceConfig
 
-    runLogger = flip runLoggingT $ logger $
-        if verbose then LevelDebug else LevelInfo
-
     from = mirrorFrom
     to   = mirrorTo
-
-outputMutex :: MVar ()
-{-# NOINLINE outputMutex #-}
-outputMutex = unsafePerformIO $ newMVar ()
-
-logger :: LogLevel -> Loc -> LogSource -> LogLevel -> LogStr -> IO ()
-logger maxLvl _loc src lvl logStr = when (lvl >= maxLvl) $ do
-    now <- getCurrentTime
-    let stamp = formatTime defaultTimeLocale "%b-%d %H:%M:%S" now
-    holding outputMutex $
-        putStrLn $ stamp ++ " " ++ renderLevel lvl
-                ++ " " ++ renderSource src ++ renderLogStr logStr
-  where
-    holding mutex = withMVar mutex . const
-
-    renderLevel LevelDebug = "[DEBUG]"
-    renderLevel LevelInfo  = "[INFO]"
-    renderLevel LevelWarn  = "[WARN]"
-    renderLevel LevelError = "[ERROR]"
-    renderLevel (LevelOther txt) = "[" ++ T.unpack txt ++ "]"
-
-    renderSource :: LogSource -> String
-    renderSource txt
-        | T.null txt = ""
-        | otherwise  = T.unpack txt ++ ": "
-
-    renderLogStr = T.unpack . T.decodeUtf8 . fromLogStr
