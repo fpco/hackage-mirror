@@ -25,10 +25,15 @@ import Options.Applicative
       header,
       fullDesc,
       (<>) )
-import Control.Monad.Logger ( runStdoutLoggingT )
+import Control.Monad.Logger
+       (filterLogger, LogLevel(LevelDebug), runStdoutLoggingT)
 
 main :: IO ()
-main = execParser optsParser >>= runStdoutLoggingT . mirrorHackage
+main =
+  do opts <- execParser optsParser
+     runStdoutLoggingT
+       (filterLogger (logFilter opts)
+                     (mirrorHackage opts))
   where optsParser =
           info (helper <*> options)
                (fullDesc <>
@@ -49,3 +54,8 @@ main = execParser optsParser >>= runStdoutLoggingT . mirrorHackage
           strOption (long "secret" <>
                      value "" <>
                      help "S3 secret key")
+        logFilter opts _ LevelDebug
+          | verbose opts = True
+        logFilter _ _ LevelDebug
+          | otherwise = False
+        logFilter _ _ _ = True
