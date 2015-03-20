@@ -41,6 +41,8 @@ main =
                 header "hackage-mirror - mirror only the minimum")
         options =
           Options <$>
+          switch (long "verbose" <>
+                  help "Display verbose output") <*>
           switch (long "rebuild" <>
                   help "Don't mirror; used for rebuilding") <*>
           strOption (long "from" <>

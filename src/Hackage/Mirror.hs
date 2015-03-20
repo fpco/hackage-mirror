@@ -109,7 +109,8 @@ import Text.Shakespeare.Text ( st )
 
 -- | Options to pass to mirrorHackage
 data Options =
-  Options {rebuild :: Bool       -- ^ Rebuild Mirror?
+  Options {verbose :: Bool       -- ^ Verbose Output?
+          ,rebuild :: Bool       -- ^ Rebuild Mirror?
           ,mirrorFrom :: String  -- ^ Hackage Source URL eg: https://hackage.haskell.org
           ,mirrorTo :: String    -- ^ Mirror Destination URL eg: s3://my-hackage-mirror-bucket
           ,s3AccessKey :: String -- ^ Amazon ACCESS_KEY_ID for S3
