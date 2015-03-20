@@ -5,7 +5,8 @@ homepage:            http://fpcomplete.com
 license:             MIT
 license-file:        LICENSE
 author:              John Wiegley
-maintainer:          johnw@fpcomplete.com
+copyright:           FPComplete
+maintainer:          tim@fpcomplete.com
 category:            Distribution
 build-type:          Simple
 extra-source-files:  README.md
