@@ -267,8 +267,8 @@ upload _ _ _ path = uploadToPath path
 -- | Mirror Hackage using the supplied Options.
 mirrorHackage :: (MonadMask m,MonadIO m,MonadLogger m,CL.MonadActive m,MonadBaseControl IO m) => Options -> m ()
 mirrorHackage Options {..} = do
-    ref <- liftIO $ newIORef []
-    cfg <- mkCfg
+    ref <- liftIO (newIORef [])
+    cfg <- mkCfg ref
     withManager $ \mgr -> do
         sums <- getChecksums cfg mgr
         putChecksums cfg mgr "00-checksums.bak" sums
@@ -372,12 +372,12 @@ mirrorHackage Options {..} = do
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    mkCfg =
+    mkCfg ref =
        liftBaseWith $ \run -> do
           return $ Aws.Configuration Aws.Timestamp Aws.Credentials
              { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
              , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
-             , v4SigningKeys   = undefined
+             , v4SigningKeys   = ref
              , iamToken        = Nothing
              }
              (logger' run)
