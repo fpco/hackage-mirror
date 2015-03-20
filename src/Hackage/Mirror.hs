@@ -24,9 +24,6 @@ serving a hackage mirror.
 module Hackage.Mirror (Options(..), mirrorHackage)
        where
 
-import           Control.Monad.Catch (MonadMask)
-import           Data.IORef
-
 import qualified Aws as Aws
     ( Transaction,
       TimeInfo(Timestamp),
@@ -37,19 +34,17 @@ import qualified Aws as Aws
       DefaultServiceConfiguration(defServiceConfig),
       Credentials(Credentials, accessKeyID, iamToken, secretAccessKey,
                   v4SigningKeys),
-      LogLevel(Debug, Error),
+      LogLevel(..),
       Configuration(Configuration),
       readResponseIO,
       readResponse,
-      defaultLog,
       aws )
 import qualified Aws.S3 as Aws
     ( S3Configuration,
       Bucket,
       GetObjectResponse(gorResponse),
       putObject,
-      getObject)
-
+      getObject )
 import qualified Codec.Archive.Tar as Tar
     ( Entry(entryContent),
       EntryContent(NormalFile),
@@ -59,74 +54,58 @@ import qualified Codec.Archive.Tar as Tar
       read )
 import qualified Codec.Archive.Tar.Entry as Tar
     ( Entry(entryTime) )
-import           Control.Concurrent.Async.Lifted ( concurrently )
-import           Control.Concurrent.Lifted ( MVar, withMVar, newMVar )
-import           Control.Concurrent.STM
+import Control.Concurrent.Async.Lifted ( concurrently )
+import Control.Concurrent.STM
     ( modifyTVar, writeTVar, readTVarIO, newTVarIO, atomically )
-import           Control.Exception.Lifted ( SomeException, try, finally )
-import           Control.Monad ( void, when, unless, mfilter )
-import           Control.Monad.IO.Class ( MonadIO(..) )
-import           Control.Monad.Logger
-    ( LogStr,
-      LogLevel(..),
-      LogSource,
-      Loc,
-      LoggingT(runLoggingT),
-      MonadLogger,
-      logInfo,
-      logError )
-import           Control.Monad.Morph ( MonadTrans(lift), MFunctor(hoist) )
-import           Control.Monad.Trans.Control
-import           Control.Monad.Trans.Resource
+import Control.Exception.Lifted ( SomeException, try, finally )
+import Control.Monad ( void, when, unless, mfilter )
+import Control.Monad.Catch ( MonadMask )
+import Control.Monad.IO.Class ( MonadIO(..) )
+import Control.Monad.Logger
+    ( MonadLogger, logWarn, logInfo, logError, logDebug )
+import Control.Monad.Morph ( MonadTrans(lift), MFunctor(hoist) )
+import Control.Monad.Trans.Control
+    ( MonadBaseControl(liftBaseWith), control )
+import Control.Monad.Trans.Resource
     ( ResourceT,
       MonadResource(..),
       MonadThrow,
       transResourceT,
       monadThrow )
-import           Control.Retry ( retrying, (<>) )
+import Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
-import           Data.ByteString ( ByteString )
+import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Lazy as BL
     ( ByteString, null, fromChunks )
-import           Data.Conduit
-    ( Source,
-      yield,
-      unwrapResumable,
-      ($=),
-      ($$) )
+import Data.Conduit ( Source, yield, unwrapResumable, ($=), ($$) )
 import qualified Data.Conduit.Binary as CB
     ( sourceLbs, sourceFile, sinkLbs, sinkFile )
 import qualified Data.Conduit.Lazy as CL
     ( MonadActive, lazyConsume )
 import qualified Data.Conduit.List as CL ( mapMaybeM )
-import           Data.Conduit.Zlib as CZ
+import Data.Conduit.Zlib as CZ
     ( WindowBits(WindowBits), ungzip, compress )
-import           Data.Default ( def )
+import Data.Default ( def )
 import qualified Data.HashMap.Strict as M
     ( insert, fromList, lookup, toList, empty )
-import           Data.IORef ( newIORef )
-import           Data.List ( isPrefixOf )
-import           Data.Serialize ( encode, decodeLazy )
-import qualified Data.Text as T ( unpack, pack, null, isInfixOf )
-import qualified Data.Text.Encoding as T ( encodeUtf8, decodeUtf8 )
-import           Data.Thyme ( formatTime, getCurrentTime )
-import           Network.HTTP.Conduit
+import Data.IORef ( newIORef )
+import Data.List ( isPrefixOf )
+import Data.Serialize ( encode, decodeLazy )
+import qualified Data.Text as T ( unpack, pack, isInfixOf )
+import qualified Data.Text.Encoding as T ( encodeUtf8 )
+import Network.HTTP.Conduit
     ( Response(responseBody),
       RequestBody(RequestBodyLBS),
       Manager,
       withManager,
       http,
       parseUrl )
-import           System.Directory ( doesFileExist, createDirectoryIfMissing )
-import           System.FilePath
+import System.Directory ( doesFileExist, createDirectoryIfMissing )
+import System.FilePath
     ( splitDirectories, addExtension, takeDirectory, (</>) )
-import           System.IO ( hClose )
-import           System.IO.Temp ( withSystemTempFile )
-import           System.IO.Unsafe ( unsafePerformIO )
-import           System.Locale ( defaultTimeLocale )
-import           System.Log.FastLogger ( fromLogStr )
-import           Text.Shakespeare.Text ( st )
-import           Control.Monad.Logger
+import System.IO ( hClose )
+import System.IO.Temp ( withSystemTempFile )
+import Text.Shakespeare.Text ( st )
 
 -- | Options to pass to mirrorHackage
 data Options =

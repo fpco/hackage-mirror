@@ -25,7 +25,7 @@ import Options.Applicative
       header,
       fullDesc,
       (<>) )
-import Control.Monad.Logger
+import Control.Monad.Logger ( runStdoutLoggingT )
 
 main :: IO ()
 main = execParser optsParser >>= runStdoutLoggingT . mirrorHackage
