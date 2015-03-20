@@ -372,7 +372,6 @@ mirrorHackage Options {..} = do
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    mkCfg :: (MonadBaseControl IO m,MonadLogger m) => m Aws.Configuration
     mkCfg =
        liftBaseWith $ \run -> do
           return $ Aws.Configuration Aws.Timestamp Aws.Credentials
