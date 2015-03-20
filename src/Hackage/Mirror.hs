@@ -402,9 +402,14 @@ mirrorHackage Options {..} = do
              , v4SigningKeys   = undefined
              , iamToken        = Nothing
              }
-             -- (Aws.defaultLog (if verbose then Aws.Debug else Aws.Error))
-             (\logLevel text -> do stm <- run ($(logInfo) "TODO")
-                                   return ())
+             (logger' run)
+       where
+         logger' run ll text = do _stm <- run (log' ll text)
+                                  return ()
+         log' Aws.Debug = $logDebug
+         log' Aws.Info = $logInfo
+         log' Aws.Warning = $logWarn
+         log' Aws.Error  = $logError
 
     svccfg = Aws.defServiceConfig
 
