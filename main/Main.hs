@@ -56,8 +56,5 @@ main =
           strOption (long "secret" <>
                      value "" <>
                      help "S3 secret key")
-        logFilter opts _ LevelDebug
-          | verbose opts = True
-        logFilter _ _ LevelDebug
-          | otherwise = False
+        logFilter opts _ LevelDebug = verbose opts
         logFilter _ _ _ = True
