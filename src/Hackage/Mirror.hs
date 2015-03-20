@@ -384,10 +384,9 @@ mirrorHackage Options {..} = do
        where
          logger' run ll text = do _stm <- run (log' ll text)
                                   return ()
-         log' Aws.Debug = $logDebug
-         log' Aws.Info = $logInfo
          log' Aws.Warning = $logWarn
          log' Aws.Error  = $logError
+         log' _ = $logDebug
 
     svccfg = Aws.defServiceConfig
 
