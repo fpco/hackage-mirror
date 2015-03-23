@@ -7,98 +7,130 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-|
+Module      : Hackage.Mirror
+Description : Create your own a mirror of Hackage
+Copyright   : (c) FPComplete.com, 2015
+License     : MIT
+Maintainer  : Tim Dysinger <tim@fpcomplete.com>
+Stability   : experimental
+Portability : POSIX
 
-module Main where
+This module will help you create a mirror of Hackage on your own
+server or S3 bucket. An S3 bucket can be a cost effective way of
+serving a hackage mirror.
+-}
 
-import           Aws hiding (LogLevel, logger)
+module Hackage.Mirror (Options(..), mirrorHackage)
+       where
+
+import qualified Aws as Aws
+    ( Transaction,
+      TimeInfo(Timestamp),
+      ServiceConfiguration,
+      ResponseMetadata,
+      Response(responseResult),
+      NormalQuery,
+      DefaultServiceConfiguration(defServiceConfig),
+      Credentials(Credentials, accessKeyID, iamToken, secretAccessKey,
+                  v4SigningKeys),
+      LogLevel(..),
+      Configuration(Configuration),
+      readResponseIO,
+      readResponse,
+      aws )
 import qualified Aws.S3 as Aws
+    ( S3Configuration,
+      Bucket,
+      GetObjectResponse(gorResponse),
+      putObject,
+      getObject )
 import qualified Codec.Archive.Tar as Tar
+    ( Entry(entryContent),
+      EntryContent(NormalFile),
+      Entries(Done, Fail, Next),
+      write,
+      entryPath,
+      read )
 import qualified Codec.Archive.Tar.Entry as Tar
-import           Control.Applicative
-import           Control.Concurrent.Async.Lifted
-import           Control.Concurrent.Lifted hiding (yield)
-import           Control.Concurrent.STM
-import           Control.Exception.Lifted
-import           Control.Monad hiding (forM_)
-import           Control.Monad.IO.Class
-import           Control.Monad.Logger
-import           Control.Monad.Morph
-import           Control.Monad.Trans.Control
-import           Control.Monad.Trans.Resource
-import           Control.Retry
-import qualified Crypto.Hash.SHA512 as SHA512
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
+    ( Entry(entryTime) )
+import Control.Concurrent.Async.Lifted ( concurrently )
+import Control.Concurrent.STM
+    ( modifyTVar, writeTVar, readTVarIO, newTVarIO, atomically )
+import Control.Exception.Lifted ( SomeException, try, finally )
+import Control.Monad ( void, when, unless, mfilter )
+import Control.Monad.Catch ( MonadMask )
+import Control.Monad.IO.Class ( MonadIO(..) )
+import Control.Monad.Logger
+    ( MonadLogger, logWarn, logInfo, logError, logDebug )
+import Control.Monad.Morph ( MonadTrans(lift), MFunctor(hoist) )
+import Control.Monad.Trans.Control
+    ( MonadBaseControl(liftBaseWith), control )
+import Control.Monad.Trans.Resource
+    ( ResourceT,
+      MonadResource(..),
+      MonadThrow,
+      transResourceT,
+      monadThrow )
+import Control.Retry ( retrying, (<>) )
+import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
+import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Lazy as BL
-import           Data.Conduit
+    ( ByteString, null, fromChunks )
+import Data.Conduit ( Source, yield, unwrapResumable, ($=), ($$) )
 import qualified Data.Conduit.Binary as CB
+    ( sourceLbs, sourceFile, sinkLbs, sinkFile )
 import qualified Data.Conduit.Lazy as CL
-import qualified Data.Conduit.List as CL
-import           Data.Conduit.Zlib as CZ
-import           Data.Default (def)
-import           Data.IORef (newIORef)
+    ( MonadActive, lazyConsume )
+import qualified Data.Conduit.List as CL ( mapMaybeM )
+import Data.Conduit.Zlib as CZ
+    ( WindowBits(WindowBits), ungzip, compress )
+import Data.Default ( def )
 import qualified Data.HashMap.Strict as M
-import           Data.List
-import           Data.Serialize hiding (label)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import           Data.Thyme
-import           Network.HTTP.Conduit hiding (Response)
-import           Options.Applicative as Opt
-import           System.Directory
-import           System.FilePath
-import           System.IO
-import           System.IO.Temp
-import           System.IO.Unsafe (unsafePerformIO)
-import           System.Locale
-import           System.Log.FastLogger hiding (check)
-import           Text.Shakespeare.Text
+    ( insert, fromList, lookup, toList, empty )
+import Data.IORef ( newIORef )
+import Data.List ( isPrefixOf )
+import Data.Serialize ( encode, decodeLazy )
+import qualified Data.Text as T ( unpack, pack, isInfixOf )
+import qualified Data.Text.Encoding as T ( encodeUtf8 )
+import Network.HTTP.Conduit
+    ( Response(responseBody),
+      RequestBody(RequestBodyLBS),
+      Manager,
+      withManager,
+      http,
+      parseUrl )
+import System.Directory ( doesFileExist, createDirectoryIfMissing )
+import System.FilePath
+    ( splitDirectories, addExtension, takeDirectory, (</>) )
+import System.IO ( hClose )
+import System.IO.Temp ( withSystemTempFile )
+import Text.Shakespeare.Text ( st )
 
-data Options = Options
-    { verbose     :: Bool
-    , rebuild     :: Bool
-    , mirrorFrom  :: String
-    , mirrorTo    :: String
-    , s3AccessKey :: String
-    , s3SecretKey :: String
-    }
+-- | Options to pass to mirrorHackage
+data Options =
+  Options {verbose :: Bool       -- ^ Verbose Output?
+          ,rebuild :: Bool       -- ^ Rebuild Mirror?
+          ,mirrorFrom :: String  -- ^ Hackage Source URL eg: https://hackage.haskell.org
+          ,mirrorTo :: String    -- ^ Mirror Destination URL eg: s3://my-hackage-mirror-bucket
+          ,s3AccessKey :: String -- ^ Amazon ACCESS_KEY_ID for S3
+          ,s3SecretKey :: String -- ^ Amazon SECRET_ACCESS_KEY for S3
+          }
 
-defaultOptions :: Options
-defaultOptions = Options
-    { verbose     = False
-    , rebuild     = False
-    , mirrorFrom  = ""
-    , mirrorTo    = ""
-    , s3AccessKey = ""
-    , s3SecretKey = ""
-    }
+data Package =
+  Package {packageName :: !String
+          ,packageVersion :: !String
+          ,packageCabal :: !BL.ByteString
+          ,packageIdentifier :: !ByteString
+          ,packageTarEntry :: !Tar.Entry}
 
-hackageBaseUrl :: String
-hackageBaseUrl = "http://hackage.haskell.org"
-
-options :: Opt.Parser Options
-options = Options
-    <$> switch (long "verbose" <> help "Display verbose output")
-    <*> switch (long "rebuild" <> help "Don't mirror; used for rebuilding")
-    <*> strOption (long "from" <> value hackageBaseUrl
-                   <> help "Base URL to mirror from")
-    <*> strOption (long "to" <> help "Base URL of server mirror to")
-    <*> strOption (long "access" <> value "" <> help "S3 access key")
-    <*> strOption (long "secret" <> value "" <> help "S3 secret key")
-
-data Package = Package
-    { packageName       :: !String
-    , packageVersion    :: !String
-    , packageCabal      :: !BL.ByteString
-    , packageIdentifier :: !ByteString
-    , packageTarEntry   :: !Tar.Entry
-    }
+data PathKind
+  = UrlPath
+  | S3Path
+  | FilePath
 
 packageFullName :: Package -> String
 packageFullName Package {..} = packageName <> "-" <> packageVersion
-
-data PathKind = UrlPath | S3Path | FilePath
 
 pathKind :: String -> PathKind
 pathKind url
@@ -151,22 +183,22 @@ withS3 url file f = case splitDirectories (T.unpack url) of
     ["s3:", bucket, prefix] -> f (T.pack bucket) $ prefix </> file
     _ -> monadThrow $ userError $ "Failed to parse S3 path: " ++ T.unpack url
 
-awsRetry :: (MonadIO m, Transaction r a)
-         => Configuration
-         -> ServiceConfiguration r NormalQuery
+awsRetry :: (MonadIO m, Aws.Transaction r a)
+         => Aws.Configuration
+         -> Aws.ServiceConfiguration r Aws.NormalQuery
          -> Manager
          -> r
-         -> ResourceT m (Response (ResponseMetadata a) a)
+         -> ResourceT m (Aws.Response (Aws.ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
-        retrying def (const $ return . isLeft . responseResult) $ aws cfg svcfg mgr r
+        retrying def (const $ return . isLeft . Aws.responseResult) $ Aws.aws cfg svcfg mgr r
   where
     isLeft Left{} = True
     isLeft Right{} = False
 
 downloadFromS3 :: MonadResource m
-               => Configuration
-               -> Aws.S3Configuration NormalQuery
+               => Aws.Configuration
+               -> Aws.S3Configuration Aws.NormalQuery
                -> Manager
                -> Aws.Bucket
                -> String
@@ -175,7 +207,7 @@ downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
     go bucket' (T.pack -> file') = do
         res  <- liftResourceT $
             awsRetry cfg svccfg mgr $ Aws.getObject bucket' file'
-        case readResponse res of
+        case Aws.readResponse res of
             Left (_ :: SomeException) -> return ()
             Right gor -> do
                 -- jww (2013-11-20): What to do with fin?
@@ -184,8 +216,8 @@ downloadFromS3 cfg svccfg mgr bucket file = withS3 bucket file go where
                 hoist liftResourceT src
 
 download :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
-         => Configuration
-         -> Aws.S3Configuration NormalQuery
+         => Aws.Configuration
+         -> Aws.S3Configuration Aws.NormalQuery
          -> Manager
          -> String               -- ^ The server path, like /tmp/foo
          -> String               -- ^ The file's path within the server path
@@ -203,13 +235,9 @@ uploadToPath path file src = do
     liftIO $ createDirectoryIfMissing True (takeDirectory p)
     src $$ CB.sinkFile p
 
-uploadToUrl :: (MonadResource m, MonadBaseControl IO m, MonadThrow m)
-              => Manager -> String -> String -> Source m ByteString -> m ()
-uploadToUrl _mgr _path _file _src = error "uploadToUrl not implemented"
-
 uploadToS3 :: (MonadResource m, m ~ ResourceT IO)
-           => Configuration
-           -> Aws.S3Configuration NormalQuery
+           => Aws.Configuration
+           -> Aws.S3Configuration Aws.NormalQuery
            -> Manager
            -> Aws.Bucket
            -> String
@@ -222,11 +250,11 @@ uploadToS3 cfg svccfg mgr bucket file src = withS3 bucket file go where
             Aws.putObject bucket' file' (RequestBodyLBS lbs)
         -- Reading the response triggers an exception if one occurred during
         -- the upload.
-        void $ readResponseIO res
+        void $ Aws.readResponseIO res
 
 upload :: (MonadResource m, m ~ ResourceT IO)
-       => Configuration
-       -> Aws.S3Configuration NormalQuery
+       => Aws.Configuration
+       -> Aws.S3Configuration Aws.NormalQuery
        -> Manager
        -> String
        -> String
@@ -236,35 +264,12 @@ upload cfg svccfg mgr path@(pathKind -> S3Path) =
     uploadToS3 cfg svccfg mgr (T.pack path)
 upload _ _ _ path = uploadToPath path
 
-backingFile :: MonadResource m
-           => FilePath
-           -> Conduit ByteString m ByteString
-backingFile fp =
-    bracketP (liftIO (openFile fp WriteMode)) (liftIO . hClose) loop
-  where
-    loop h = do
-        mres <- await
-        case mres of
-            Nothing -> do
-                liftIO $ hClose h
-                CB.sourceFile fp
-            Just res -> do
-                liftIO $ B.hPut h res
-                loop h
-
-main :: IO ()
-main = execParser opts >>= mirrorHackage
-  where
-    opts = info (helper <*> options)
-                (fullDesc
-                 <> progDesc "Mirror the necessary parts of Hackage"
-                 <> header "simple-mirror - mirror only the minimum")
-
-mirrorHackage :: Options -> IO ()
+-- | Mirror Hackage using the supplied Options.
+mirrorHackage :: (MonadMask m,MonadIO m,MonadLogger m,CL.MonadActive m,MonadBaseControl IO m) => Options -> m ()
 mirrorHackage Options {..} = do
-    ref <- newIORef []
-    let cfg = mkCfg ref
-    runLogger $ withManager $ \mgr -> do
+    ref <- liftIO (newIORef [])
+    cfg <- mkCfg ref
+    withManager $ \mgr -> do
         sums <- getChecksums cfg mgr
         putChecksums cfg mgr "00-checksums.bak" sums
         newSums <- liftIO $ newTVarIO sums
@@ -304,7 +309,7 @@ mirrorHackage Options {..} = do
                 et  = Tar.entryTime packageTarEntry
                 new = case M.lookup packageIdentifier sums of
                     Nothing -> True
-                    Just (et', _sha') -> et /= et' -- || sha /= sha'
+                    Just (et', _sha') -> et /= et'
             valid <- if new
                      then mirror cfg mgr pkg sha newSums changed
                      else return True
@@ -363,48 +368,27 @@ mirrorHackage Options {..} = do
         indexPackages $
             download cfg svccfg mgr from "00-index.tar.gz" $= CZ.ungzip
 
+    withTemp :: MonadBaseControl IO m => String -> (FilePath -> m ()) -> m ()
     withTemp prefix f = control $ \run ->
         withSystemTempFile prefix $ \temp h -> hClose h >> run (f temp)
 
-    mkCfg ref = Configuration Timestamp Credentials
-        { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
-        , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
-        , v4SigningKeys   = ref
-        , iamToken        = Nothing
-        }
-        (defaultLog (if verbose then Aws.Debug else Aws.Error))
+    mkCfg ref =
+       liftBaseWith $ \run -> do
+          return $ Aws.Configuration Aws.Timestamp Aws.Credentials
+             { accessKeyID     = T.encodeUtf8 (T.pack s3AccessKey)
+             , secretAccessKey = T.encodeUtf8 (T.pack s3SecretKey)
+             , v4SigningKeys   = ref
+             , iamToken        = Nothing
+             }
+             (logger' run)
+       where
+         logger' run ll text = do _stm <- run (log' ll text)
+                                  return ()
+         log' Aws.Warning = $logWarn
+         log' Aws.Error  = $logError
+         log' _ = $logDebug
 
-    svccfg = defServiceConfig
-
-    runLogger = flip runLoggingT $ logger $
-        if verbose then LevelDebug else LevelInfo
+    svccfg = Aws.defServiceConfig
 
     from = mirrorFrom
     to   = mirrorTo
-
-outputMutex :: MVar ()
-{-# NOINLINE outputMutex #-}
-outputMutex = unsafePerformIO $ newMVar ()
-
-logger :: LogLevel -> Loc -> LogSource -> LogLevel -> LogStr -> IO ()
-logger maxLvl _loc src lvl logStr = when (lvl >= maxLvl) $ do
-    now <- getCurrentTime
-    let stamp = formatTime defaultTimeLocale "%b-%d %H:%M:%S" now
-    holding outputMutex $
-        putStrLn $ stamp ++ " " ++ renderLevel lvl
-                ++ " " ++ renderSource src ++ renderLogStr logStr
-  where
-    holding mutex = withMVar mutex . const
-
-    renderLevel LevelDebug = "[DEBUG]"
-    renderLevel LevelInfo  = "[INFO]"
-    renderLevel LevelWarn  = "[WARN]"
-    renderLevel LevelError = "[ERROR]"
-    renderLevel (LevelOther txt) = "[" ++ T.unpack txt ++ "]"
-
-    renderSource :: LogSource -> String
-    renderSource txt
-        | T.null txt = ""
-        | otherwise  = T.unpack txt ++ ": "
-
-    renderLogStr = T.unpack . T.decodeUtf8 . fromLogStr
