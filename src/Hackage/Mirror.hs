@@ -12,7 +12,7 @@ Module      : Hackage.Mirror
 Description : Create your own a mirror of Hackage
 Copyright   : (c) FPComplete.com, 2015
 License     : MIT
-Maintainer  : John Wiegley <johnw@fpcomplete.com>
+Maintainer  : Tim Dysinger <tim@fpcomplete.com>
 Stability   : experimental
 Portability : POSIX
 
