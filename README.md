@@ -8,7 +8,7 @@ A tool to create an AWS S3 mirror of Hackage.
 
 ## Install
 
-    cabal install
+    cabal install hackage-mirror
 
 ## Usage
 
