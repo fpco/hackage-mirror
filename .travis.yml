@@ -1,34 +1,4 @@
-# https://github.com/hvr/multi-ghc-travis
-
-env:
- - GHCVER=7.8.4 CABALVER=1.20
-
-before_install:
- - travis_retry sudo add-apt-repository -y ppa:hvr/ghc
- - travis_retry sudo apt-get update
- - travis_retry sudo apt-get install -y cabal-install-$CABALVER ghc-$GHCVER
- - export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
-
-install:
- - cabal --version
- - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
- - travis_retry cabal update
- - cabal sandbox init
- - cabal install -v -j --enable-tests --enable-benchmarks --enable-documentation
-     --only-dependencies
-
-script:
- - cabal install -v -j --enable-tests --enable-benchmarks --enable-documentation
- - cabal test
- - cabal check
- - cabal haddock
- - cabal sdist
- - export SRC_TGZ=$(cabal info . | awk '{print $2 ".tar.gz";exit}') ;
-   cd dist/;
-   cabal sandbox init;
-   if [ -f "$SRC_TGZ" ]; then
-      cabal install "$SRC_TGZ";
-   else
-      echo "expected '$SRC_TGZ' not found";
-      exit 1;
-   fi
+language: haskell
+ghc:
+  - 7.8
+  - 7.6
