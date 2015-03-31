@@ -49,7 +49,7 @@ library
                      , temporary
                      , text
                      , thyme
-                     , transformers >=0.4
+                     , transformers
                      , unordered-containers
 
 executable hackage-mirror
