@@ -1,5 +1,5 @@
 name:                hackage-mirror
-version:             0.1.0.0
+version:             0.1.1.0
 synopsis:            Simple mirroring utility for Hackage
 description:         Package allows you to mirror all of hackage to your own s3 bucket.
 homepage:            http://fpcomplete.com
