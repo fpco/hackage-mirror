@@ -108,4 +108,25 @@ script:
       exit 1;
    fi
 
+ - mkdir -p to-travis
+ - cp dist/build/hackage-mirror/hackage-mirror to-travis
+ - strip to-travis/hackage-mirror
+ - bzip2 to-travis/hackage-mirror
+
+deploy:
+  provider: s3
+  access_key_id: AKIAIAVQAXMLLEPM4I5A
+  secret_access_key:
+    secure: "Wfc6T/RRTTcBgL7bPGBUDK09FQR1Zeut4JD+Yr+l4iMcYcr86HPu8qID83mRUR5gfFU97r+tDeRZ+uZAOwhgoyVO+wD8vljsxQ7sLJ8z505vvxw8B75g39sCF46I2JBu9NqemqAo8+ihq9uW3g7qdT7vZEGpuZIp12Sq/Ik1dko="
+  bucket: stackage-travis
+  acl: public_read
+  skip_cleanup: true
+  local_dir: to-travis
+  upload-dir: hackage-mirror
+  on:
+    repo: fpco/hackage-mirror
+    branch: master
+    condition: $GHCVER = 7.8.4
+
+
 # EOF
