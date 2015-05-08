@@ -92,6 +92,12 @@ script:
  # (including tests/benchmarks)
  - cabal build
 
+ # Copy to to-travis for deployment
+ - mkdir -p to-travis
+ - cp dist/build/hackage-mirror/hackage-mirror to-travis
+ - strip to-travis/hackage-mirror
+ - bzip2 to-travis/hackage-mirror
+
  - cabal test
  - cabal check
 
@@ -107,11 +113,6 @@ script:
       echo "expected '$SRC_TGZ' not found";
       exit 1;
    fi
-
- - mkdir -p to-travis
- - cp dist/build/hackage-mirror/hackage-mirror to-travis
- - strip to-travis/hackage-mirror
- - bzip2 to-travis/hackage-mirror
 
 deploy:
   provider: s3
