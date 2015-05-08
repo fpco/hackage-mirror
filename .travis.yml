@@ -114,6 +114,8 @@ script:
       exit 1;
    fi
 
+ - cd ..
+
 deploy:
   provider: s3
   access_key_id: AKIAIAVQAXMLLEPM4I5A
