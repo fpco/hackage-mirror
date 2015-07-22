@@ -82,7 +82,7 @@ import qualified Data.Conduit.Binary as CB
     ( sourceLbs, sourceFile, sinkLbs, sinkFile )
 import qualified Data.Conduit.Lazy as CL
     ( MonadActive, lazyConsume )
-import qualified Data.Conduit.List as CL ( mapMaybeM )
+import qualified Data.Conduit.List as CL ( mapMaybeM, sinkNull )
 import Data.Conduit.Zlib as CZ
     ( WindowBits(WindowBits), ungzip, compress )
 import Data.Default ( def )
@@ -280,28 +280,21 @@ mirrorHackage Options {..} = do
                 sums' <- liftIO $ readTVarIO newSums
                 putChecksums cfg mgr "00-checksums.dat" sums'
   where
-    go cfg mgr sums newSums changed = do
-        ents <- CL.lazyConsume $
-            getEntries cfg mgr $= processEntries cfg mgr sums newSums changed
+    go cfg mgr sums newSums changed = withTemp "index" $ \temp -> do
+        $(logInfo) [st|Downloading index.tar.gz from #{from}|]
+        download cfg svccfg mgr from "00-index.tar.gz" $$ CB.sinkFile temp
 
-        -- Use a temp file as a "backing store" to accumulate the new tarball.
-        -- Only when it is complete and we've reached the end normally do we
-        -- copy the file onto the server.  The checksum file is saved in all
-        -- cases so that we know what we mirrored in this session; the index
-        -- file, meanwhile, is always valid (albeit temporarily out-of-date if
-        -- we abort due to an exception).
-        withTemp "index" $ \temp -> do
-            CB.sourceLbs (Tar.write ents)
-                $= CZ.compress 7 (WindowBits 31) -- gzip compression
-                $$ CB.sinkFile temp
+        getEntries cfg mgr temp
+            $$ processEntries cfg mgr sums newSums changed
+            $= CL.sinkNull
 
-            -- Writing the tarball is what causes the changed bit to be
-            -- calculated, so we write it first to a temp file and then only
-            -- upload it if necessary.
-            ch <- liftIO $ readTVarIO changed
-            when ch $ void $ do
-                _ <- push cfg mgr "00-index.tar.gz" $ CB.sourceFile temp
-                $(logInfo) [st|Uploaded 00-index.tar.gz|]
+        -- Writing the tarball is what causes the changed bit to be
+        -- calculated, so we write it first to a temp file and then only
+        -- upload it if necessary.
+        ch <- liftIO $ readTVarIO changed
+        when ch $ void $ do
+            _ <- push cfg mgr "00-index.tar.gz" $ CB.sourceFile temp
+            $(logInfo) [st|Uploaded 00-index.tar.gz|]
 
     processEntries cfg mgr sums newSums changed =
         CL.mapMaybeM $ \pkg@(Package {..}) -> do
@@ -363,10 +356,7 @@ mirrorHackage Options {..} = do
         void $ push cfg mgr file $ yield (encode (M.toList sums))
         $(logInfo) [st|Uploaded #{file}|]
 
-    getEntries cfg mgr = do
-        $(logInfo) [st|Downloading index.tar.gz from #{from}|]
-        indexPackages $
-            download cfg svccfg mgr from "00-index.tar.gz" $= CZ.ungzip
+    getEntries cfg mgr temp = indexPackages $ CB.sourceFile temp $= CZ.ungzip
 
     withTemp :: MonadBaseControl IO m => String -> (FilePath -> m ()) -> m ()
     withTemp prefix f = control $ \run ->
