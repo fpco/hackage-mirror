@@ -151,7 +151,7 @@ indexPackages src = do
                 [name, vers, _] ->
                     yield $ Package name vers cabal
                         (T.encodeUtf8 (T.pack (name <> vers))) ent
-                ["preferred-versions"] -> return ()
+                (reverse -> "preferred-versions":_) -> return ()
                 _ -> $(logError) $ "Failed to parse package name: "
                                <> T.pack (Tar.entryPath ent)
             sinkEntries entries
