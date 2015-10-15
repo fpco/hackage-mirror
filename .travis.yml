@@ -10,9 +10,9 @@ deploy:
   acl: public_read
   skip_cleanup: true
   local_dir: to-travis
-  upload-dir: all-cabal-hashes-tool
+  upload-dir: hackage-mirror
   on:
-    repo: commercialhaskell/all-cabal-hashes-tool
+    repo: fpco/hackage-mirror
     branch: master
 
 addons:
