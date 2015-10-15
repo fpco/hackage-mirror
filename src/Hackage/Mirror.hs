@@ -71,7 +71,8 @@ import Control.Monad.Trans.Resource
       MonadResource(..),
       MonadThrow,
       transResourceT,
-      monadThrow )
+      monadThrow,
+      runResourceT )
 import Control.Retry ( retrying, (<>) )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
 import Data.ByteString ( ByteString )
@@ -97,7 +98,8 @@ import Network.HTTP.Conduit
     ( Response(responseBody),
       RequestBody(RequestBodyLBS),
       Manager,
-      withManager,
+      newManager,
+      tlsManagerSettings,
       http,
       parseUrl )
 import System.Directory ( doesFileExist, createDirectoryIfMissing )
@@ -269,7 +271,8 @@ mirrorHackage :: (MonadMask m,MonadIO m,MonadLogger m,CL.MonadActive m,MonadBase
 mirrorHackage Options {..} = do
     ref <- liftIO (newIORef [])
     cfg <- mkCfg ref
-    withManager $ \mgr -> do
+    mgr <- liftIO $ newManager tlsManagerSettings
+    runResourceT $ do
         sums <- getChecksums cfg mgr
         putChecksums cfg mgr "00-checksums.bak" sums
         newSums <- liftIO $ newTVarIO sums
