@@ -1,5 +1,5 @@
 name:                hackage-mirror
-version:             0.1.1.0
+version:             0.1.1.1
 synopsis:            Simple mirroring utility for Hackage
 description:         Package allows you to mirror all of hackage to your own s3 bucket.
 homepage:            http://fpcomplete.com
@@ -10,7 +10,7 @@ copyright:           FPComplete
 maintainer:          tim@fpcomplete.com
 category:            Distribution
 build-type:          Simple
-extra-source-files:  README.md
+extra-source-files:  README.md ChangeLog.md
 cabal-version:       >=1.10
 
 source-repository head

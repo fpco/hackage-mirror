@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -73,7 +74,7 @@ import Control.Monad.Trans.Resource
       transResourceT,
       monadThrow,
       runResourceT )
-import Control.Retry ( retrying, (<>) )
+import Control.Retry ( retrying )
 import qualified Crypto.Hash.SHA512 as SHA512 ( hashlazy )
 import Data.ByteString ( ByteString )
 import qualified Data.ByteString.Lazy as BL
@@ -91,6 +92,7 @@ import qualified Data.HashMap.Strict as M
     ( insert, fromList, lookup, toList, empty )
 import Data.IORef ( newIORef )
 import Data.List ( isPrefixOf )
+import qualified Data.Monoid as Monoid
 import Data.Serialize ( encode, decodeLazy )
 import qualified Data.Text as T ( unpack, pack, isInfixOf )
 import qualified Data.Text.Encoding as T ( encodeUtf8 )
@@ -132,7 +134,7 @@ data PathKind
   | FilePath
 
 packageFullName :: Package -> String
-packageFullName Package {..} = packageName <> "-" <> packageVersion
+packageFullName Package {..} = packageName Monoid.<> "-" Monoid.<> packageVersion
 
 pathKind :: String -> PathKind
 pathKind url
@@ -152,10 +154,10 @@ indexPackages src = do
             case splitDirectories (Tar.entryPath ent) of
                 [name, vers, _] ->
                     yield $ Package name vers cabal
-                        (T.encodeUtf8 (T.pack (name <> vers))) ent
+                        (T.encodeUtf8 (T.pack (name Monoid.<> vers))) ent
                 (reverse -> "preferred-versions":_) -> return ()
                 _ -> $(logError) $ "Failed to parse package name: "
-                               <> T.pack (Tar.entryPath ent)
+                               Monoid.<> T.pack (Tar.entryPath ent)
             sinkEntries entries
         | otherwise = sinkEntries entries
     sinkEntries Tar.Done = return ()
@@ -193,7 +195,11 @@ awsRetry :: (MonadIO m, Aws.Transaction r a)
          -> ResourceT m (Aws.Response (Aws.ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
+#if MIN_VERSION_retry(0,7,0)
+        retrying def (const $ return . isLeft . Aws.responseResult) $ const $ Aws.aws cfg svcfg mgr r
+#else
         retrying def (const $ return . isLeft . Aws.responseResult) $ Aws.aws cfg svcfg mgr r
+#endif
   where
     isLeft Left{} = True
     isLeft Right{} = False
@@ -343,7 +349,7 @@ mirrorHackage Options {..} = do
                 let msg = T.pack (show (e :: SomeException))
                 unless ("No tarball exists for this package version"
                         `T.isInfixOf` msg) $
-                    $(logError) $ "FAILED " <> T.pack file <> ": " <> msg
+                    $(logError) $ "FAILED " Monoid.<> T.pack file Monoid.<> ": " Monoid.<> msg
         return eres
 
     getChecksums cfg mgr = do
