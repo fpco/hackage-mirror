@@ -33,6 +33,7 @@ script:
 - stack --no-terminal build --copy-bins --local-bin-path to-travis
 - stack --no-terminal test
 - bzip2 to-travis/hackage-mirror
+- bzip2 to-travis/hackage-watcher
 
 cache:
   directories:
