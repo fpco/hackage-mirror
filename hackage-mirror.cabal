@@ -41,7 +41,7 @@ library
                      , monad-logger
                      , old-locale
                      , resourcet
-                     , retry
+                     , retry >= 0.7
                      , shakespeare
                      , stm
                      , tar

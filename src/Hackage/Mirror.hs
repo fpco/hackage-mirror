@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -103,7 +102,7 @@ import Network.HTTP.Conduit
       newManager,
       tlsManagerSettings,
       http,
-      parseUrl )
+      parseUrlThrow )
 import System.Directory ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath
     ( splitDirectories, addExtension, takeDirectory, (</>) )
@@ -174,7 +173,7 @@ downloadFromUrl :: (MonadResource m, MonadBaseControl IO m,
                     MonadThrow m)
                 => Manager -> String -> String -> Source m ByteString
 downloadFromUrl mgr path file = do
-    req  <- lift $ parseUrl (path </> file)
+    req  <- lift $ parseUrlThrow (path </> file)
     resp <- lift $ http req mgr
     (src, _fin) <- lift $ unwrapResumable (responseBody resp)
     -- jww (2013-11-20): What to do with fin?
@@ -195,11 +194,7 @@ awsRetry :: (MonadIO m, Aws.Transaction r a)
          -> ResourceT m (Aws.Response (Aws.ResponseMetadata a) a)
 awsRetry cfg svcfg mgr r =
     transResourceT liftIO $
-#if MIN_VERSION_retry(0,7,0)
         retrying def (const $ return . isLeft . Aws.responseResult) $ const $ Aws.aws cfg svcfg mgr r
-#else
-        retrying def (const $ return . isLeft . Aws.responseResult) $ Aws.aws cfg svcfg mgr r
-#endif
   where
     isLeft Left{} = True
     isLeft Right{} = False
