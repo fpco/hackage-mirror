@@ -13,10 +13,12 @@ main = do
     update <-
         case args' of
             [] -> error errMsg
-            cmd:args -> return $ rawSystem cmd args >>= print
+            url:cmd:args -> return $ rawSystem cmd args >>= print
+    req' <- parseUrlThrow url
+    let req = req' { method = "HEAD" }
 
-    let loop mlastTag count = do
-            res <- httpLBS indexReq
+        loop mlastTag count = do
+            res <- httpLBS req
             let mnewTag = lookup "ETag" $ getResponseHeaders res
 
                 -- We don't fully trust Hackage to report things
@@ -37,5 +39,4 @@ main = do
 
     loop Nothing 0
   where
-    errMsg = "Provide a command and list of arguments to run on index change"
-    indexReq = "HEAD https://hackage.haskell.org/packages/index.tar.gz"
+    errMsg = "Provide a URL, command and list of arguments to run on index change"
