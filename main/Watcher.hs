@@ -10,33 +10,25 @@ import Control.Concurrent (threadDelay)
 main :: IO ()
 main = do
     args' <- getArgs
-    update <-
+    (url, update) <-
         case args' of
             [] -> error errMsg
-            url:cmd:args -> return $ rawSystem cmd args >>= print
-    req' <- parseUrlThrow url
-    let req = req' { method = "HEAD" }
+            url:cmd:args -> return (url, rawSystem cmd args >>= print)
+    req <- setRequestMethod "HEAD" <$> parseRequest url
 
-        loop mlastTag count = do
+    let loop mlastTag = do
             res <- httpLBS req
             let mnewTag = lookup "ETag" $ getResponseHeaders res
 
-                -- We don't fully trust Hackage to report things
-                -- accurately, see:
-                -- https://github.com/haskell/hackage-server/issues/537. So
-                -- every 10 runs, we force the update action to be run
-                -- regardless of whether the ETag changed or not.
-                newCount = (count + 1) `mod` 10
             case (mlastTag, mnewTag) of
                 (Just last, Just new)
-                    | last == new && newCount /= 0
-                        -> putStrLn "No change in index, sleeping"
+                    | last == new -> putStrLn "No change in index, sleeping"
                 _ -> update
 
             threadDelay $ 1000 * 1000 * 60 -- sleep for a minute
 
-            loop mnewTag newCount
+            loop mnewTag
 
-    loop Nothing 0
+    loop Nothing
   where
     errMsg = "Provide a URL, command and list of arguments to run on index change"
