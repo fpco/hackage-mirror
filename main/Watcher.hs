@@ -17,7 +17,7 @@ main = do
             [] -> error errMsg
             url:cmd:args -> return (url, do
                 ec <- rawSystem cmd args
-                print ec
+                putStrLn $ "Completed call, exit code: " ++ show ec
                 when (ec /= ExitSuccess) (exitWith ec))
     req <- setRequestMethod "HEAD" <$> parseRequest url
 
@@ -30,7 +30,9 @@ main = do
                     | last == new -> putStrLn "No change in index, sleeping"
                 _ -> update
 
+            putStrLn "Sleeping..."
             threadDelay $ 1000 * 1000 * 60 -- sleep for a minute
+            putStrLn "Done sleeping"
 
             loop mnewTag
 
