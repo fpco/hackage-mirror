@@ -6,6 +6,8 @@ import Network.HTTP.Simple
 import System.Environment (getArgs)
 import System.Process (rawSystem)
 import Control.Concurrent (threadDelay)
+import System.Exit
+import Control.Monad (when)
 
 main :: IO ()
 main = do
@@ -13,7 +15,9 @@ main = do
     (url, update) <-
         case args' of
             [] -> error errMsg
-            url:cmd:args -> return (url, rawSystem cmd args >>= print)
+            url:cmd:args -> return (url, do
+                ec <- rawSystem cmd args
+                when (ec /= ExitSuccess) (exitWith ec))
     req <- setRequestMethod "HEAD" <$> parseRequest url
 
     let loop mlastTag = do
