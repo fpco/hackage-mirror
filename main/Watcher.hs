@@ -17,6 +17,7 @@ main = do
             [] -> error errMsg
             url:cmd:args -> return (url, do
                 ec <- rawSystem cmd args
+                print ec
                 when (ec /= ExitSuccess) (exitWith ec))
     req <- setRequestMethod "HEAD" <$> parseRequest url
 
