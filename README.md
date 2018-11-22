@@ -1,14 +1,7 @@
 # Hackage Mirror
 
-![TravisCI](https://travis-ci.org/fpco/hackage-mirror.svg)
-![Hackage](https://img.shields.io/hackage/v/hackage-mirror.svg)
+__THIS REPO IS DEPRECATED__
 
-A tool to create an AWS S3 mirror of Hackage.
-
-## Install
-
-    cabal install hackage-mirror
-
-## Usage
-
-    hackage-mirror --help
+Since the advent of hackage-security, this repo is no longer being used or
+updated. Source code has been removed accordingly, though feel free to look at
+the history if you really want to.
